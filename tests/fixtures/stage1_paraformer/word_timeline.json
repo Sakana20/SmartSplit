@@ -1,0 +1,534 @@
+{
+  "asr": {
+    "model": "paraformer-zh:/Users/sakana/PyEnv/paraformer",
+    "provider": "paraformer-zh",
+    "text": "正 是 因 为 存 在 绝 对 正 义 所 以 我 们 接 受 现 实 的 相 对 正 义 但 是 不 要 因 为 现 实 的 相 对 正 义 我 们 就 认 为 这 个 世 界 没 有 正 义 因 为 如 果 当 你 认 为 这 个 世 界 没 有 正 义"
+  },
+  "audio": {
+    "duration_ms": 12925,
+    "format": "mp3",
+    "path": "tests/fixtures/stage1_paraformer/audio.mp3"
+  },
+  "tokens": [
+    {
+      "confidence": null,
+      "end_ms": 650,
+      "index": 0,
+      "source": "paraformer-zh",
+      "start_ms": 410,
+      "text": "正"
+    },
+    {
+      "confidence": null,
+      "end_ms": 830,
+      "index": 1,
+      "source": "paraformer-zh",
+      "start_ms": 650,
+      "text": "是"
+    },
+    {
+      "confidence": null,
+      "end_ms": 990,
+      "index": 2,
+      "source": "paraformer-zh",
+      "start_ms": 830,
+      "text": "因"
+    },
+    {
+      "confidence": null,
+      "end_ms": 1150,
+      "index": 3,
+      "source": "paraformer-zh",
+      "start_ms": 990,
+      "text": "为"
+    },
+    {
+      "confidence": null,
+      "end_ms": 1350,
+      "index": 4,
+      "source": "paraformer-zh",
+      "start_ms": 1150,
+      "text": "存"
+    },
+    {
+      "confidence": null,
+      "end_ms": 1550,
+      "index": 5,
+      "source": "paraformer-zh",
+      "start_ms": 1350,
+      "text": "在"
+    },
+    {
+      "confidence": null,
+      "end_ms": 1710,
+      "index": 6,
+      "source": "paraformer-zh",
+      "start_ms": 1550,
+      "text": "绝"
+    },
+    {
+      "confidence": null,
+      "end_ms": 1850,
+      "index": 7,
+      "source": "paraformer-zh",
+      "start_ms": 1710,
+      "text": "对"
+    },
+    {
+      "confidence": null,
+      "end_ms": 2010,
+      "index": 8,
+      "source": "paraformer-zh",
+      "start_ms": 1850,
+      "text": "正"
+    },
+    {
+      "confidence": null,
+      "end_ms": 2250,
+      "index": 9,
+      "source": "paraformer-zh",
+      "start_ms": 2010,
+      "text": "义"
+    },
+    {
+      "confidence": null,
+      "end_ms": 2430,
+      "index": 10,
+      "source": "paraformer-zh",
+      "start_ms": 2270,
+      "text": "所"
+    },
+    {
+      "confidence": null,
+      "end_ms": 2550,
+      "index": 11,
+      "source": "paraformer-zh",
+      "start_ms": 2430,
+      "text": "以"
+    },
+    {
+      "confidence": null,
+      "end_ms": 2630,
+      "index": 12,
+      "source": "paraformer-zh",
+      "start_ms": 2550,
+      "text": "我"
+    },
+    {
+      "confidence": null,
+      "end_ms": 2750,
+      "index": 13,
+      "source": "paraformer-zh",
+      "start_ms": 2630,
+      "text": "们"
+    },
+    {
+      "confidence": null,
+      "end_ms": 2970,
+      "index": 14,
+      "source": "paraformer-zh",
+      "start_ms": 2750,
+      "text": "接"
+    },
+    {
+      "confidence": null,
+      "end_ms": 3210,
+      "index": 15,
+      "source": "paraformer-zh",
+      "start_ms": 2970,
+      "text": "受"
+    },
+    {
+      "confidence": null,
+      "end_ms": 3550,
+      "index": 16,
+      "source": "paraformer-zh",
+      "start_ms": 3310,
+      "text": "现"
+    },
+    {
+      "confidence": null,
+      "end_ms": 3730,
+      "index": 17,
+      "source": "paraformer-zh",
+      "start_ms": 3570,
+      "text": "实"
+    },
+    {
+      "confidence": null,
+      "end_ms": 3870,
+      "index": 18,
+      "source": "paraformer-zh",
+      "start_ms": 3730,
+      "text": "的"
+    },
+    {
+      "confidence": null,
+      "end_ms": 4030,
+      "index": 19,
+      "source": "paraformer-zh",
+      "start_ms": 3870,
+      "text": "相"
+    },
+    {
+      "confidence": null,
+      "end_ms": 4150,
+      "index": 20,
+      "source": "paraformer-zh",
+      "start_ms": 4030,
+      "text": "对"
+    },
+    {
+      "confidence": null,
+      "end_ms": 4330,
+      "index": 21,
+      "source": "paraformer-zh",
+      "start_ms": 4150,
+      "text": "正"
+    },
+    {
+      "confidence": null,
+      "end_ms": 4570,
+      "index": 22,
+      "source": "paraformer-zh",
+      "start_ms": 4330,
+      "text": "义"
+    },
+    {
+      "confidence": null,
+      "end_ms": 5410,
+      "index": 23,
+      "source": "paraformer-zh",
+      "start_ms": 5230,
+      "text": "但"
+    },
+    {
+      "confidence": null,
+      "end_ms": 5610,
+      "index": 24,
+      "source": "paraformer-zh",
+      "start_ms": 5410,
+      "text": "是"
+    },
+    {
+      "confidence": null,
+      "end_ms": 5710,
+      "index": 25,
+      "source": "paraformer-zh",
+      "start_ms": 5610,
+      "text": "不"
+    },
+    {
+      "confidence": null,
+      "end_ms": 5910,
+      "index": 26,
+      "source": "paraformer-zh",
+      "start_ms": 5710,
+      "text": "要"
+    },
+    {
+      "confidence": null,
+      "end_ms": 6010,
+      "index": 27,
+      "source": "paraformer-zh",
+      "start_ms": 5910,
+      "text": "因"
+    },
+    {
+      "confidence": null,
+      "end_ms": 6210,
+      "index": 28,
+      "source": "paraformer-zh",
+      "start_ms": 6010,
+      "text": "为"
+    },
+    {
+      "confidence": null,
+      "end_ms": 6450,
+      "index": 29,
+      "source": "paraformer-zh",
+      "start_ms": 6210,
+      "text": "现"
+    },
+    {
+      "confidence": null,
+      "end_ms": 6610,
+      "index": 30,
+      "source": "paraformer-zh",
+      "start_ms": 6490,
+      "text": "实"
+    },
+    {
+      "confidence": null,
+      "end_ms": 6750,
+      "index": 31,
+      "source": "paraformer-zh",
+      "start_ms": 6610,
+      "text": "的"
+    },
+    {
+      "confidence": null,
+      "end_ms": 6910,
+      "index": 32,
+      "source": "paraformer-zh",
+      "start_ms": 6750,
+      "text": "相"
+    },
+    {
+      "confidence": null,
+      "end_ms": 7130,
+      "index": 33,
+      "source": "paraformer-zh",
+      "start_ms": 6910,
+      "text": "对"
+    },
+    {
+      "confidence": null,
+      "end_ms": 7250,
+      "index": 34,
+      "source": "paraformer-zh",
+      "start_ms": 7130,
+      "text": "正"
+    },
+    {
+      "confidence": null,
+      "end_ms": 7450,
+      "index": 35,
+      "source": "paraformer-zh",
+      "start_ms": 7250,
+      "text": "义"
+    },
+    {
+      "confidence": null,
+      "end_ms": 7610,
+      "index": 36,
+      "source": "paraformer-zh",
+      "start_ms": 7450,
+      "text": "我"
+    },
+    {
+      "confidence": null,
+      "end_ms": 7730,
+      "index": 37,
+      "source": "paraformer-zh",
+      "start_ms": 7610,
+      "text": "们"
+    },
+    {
+      "confidence": null,
+      "end_ms": 7930,
+      "index": 38,
+      "source": "paraformer-zh",
+      "start_ms": 7730,
+      "text": "就"
+    },
+    {
+      "confidence": null,
+      "end_ms": 8090,
+      "index": 39,
+      "source": "paraformer-zh",
+      "start_ms": 7930,
+      "text": "认"
+    },
+    {
+      "confidence": null,
+      "end_ms": 8290,
+      "index": 40,
+      "source": "paraformer-zh",
+      "start_ms": 8090,
+      "text": "为"
+    },
+    {
+      "confidence": null,
+      "end_ms": 8390,
+      "index": 41,
+      "source": "paraformer-zh",
+      "start_ms": 8290,
+      "text": "这"
+    },
+    {
+      "confidence": null,
+      "end_ms": 8550,
+      "index": 42,
+      "source": "paraformer-zh",
+      "start_ms": 8390,
+      "text": "个"
+    },
+    {
+      "confidence": null,
+      "end_ms": 8690,
+      "index": 43,
+      "source": "paraformer-zh",
+      "start_ms": 8550,
+      "text": "世"
+    },
+    {
+      "confidence": null,
+      "end_ms": 8930,
+      "index": 44,
+      "source": "paraformer-zh",
+      "start_ms": 8690,
+      "text": "界"
+    },
+    {
+      "confidence": null,
+      "end_ms": 9270,
+      "index": 45,
+      "source": "paraformer-zh",
+      "start_ms": 9030,
+      "text": "没"
+    },
+    {
+      "confidence": null,
+      "end_ms": 9590,
+      "index": 46,
+      "source": "paraformer-zh",
+      "start_ms": 9410,
+      "text": "有"
+    },
+    {
+      "confidence": null,
+      "end_ms": 9770,
+      "index": 47,
+      "source": "paraformer-zh",
+      "start_ms": 9590,
+      "text": "正"
+    },
+    {
+      "confidence": null,
+      "end_ms": 10010,
+      "index": 48,
+      "source": "paraformer-zh",
+      "start_ms": 9770,
+      "text": "义"
+    },
+    {
+      "confidence": null,
+      "end_ms": 10650,
+      "index": 49,
+      "source": "paraformer-zh",
+      "start_ms": 10470,
+      "text": "因"
+    },
+    {
+      "confidence": null,
+      "end_ms": 10870,
+      "index": 50,
+      "source": "paraformer-zh",
+      "start_ms": 10650,
+      "text": "为"
+    },
+    {
+      "confidence": null,
+      "end_ms": 11070,
+      "index": 51,
+      "source": "paraformer-zh",
+      "start_ms": 10870,
+      "text": "如"
+    },
+    {
+      "confidence": null,
+      "end_ms": 11270,
+      "index": 52,
+      "source": "paraformer-zh",
+      "start_ms": 11070,
+      "text": "果"
+    },
+    {
+      "confidence": null,
+      "end_ms": 11370,
+      "index": 53,
+      "source": "paraformer-zh",
+      "start_ms": 11270,
+      "text": "当"
+    },
+    {
+      "confidence": null,
+      "end_ms": 11510,
+      "index": 54,
+      "source": "paraformer-zh",
+      "start_ms": 11370,
+      "text": "你"
+    },
+    {
+      "confidence": null,
+      "end_ms": 11670,
+      "index": 55,
+      "source": "paraformer-zh",
+      "start_ms": 11510,
+      "text": "认"
+    },
+    {
+      "confidence": null,
+      "end_ms": 11790,
+      "index": 56,
+      "source": "paraformer-zh",
+      "start_ms": 11670,
+      "text": "为"
+    },
+    {
+      "confidence": null,
+      "end_ms": 11910,
+      "index": 57,
+      "source": "paraformer-zh",
+      "start_ms": 11790,
+      "text": "这"
+    },
+    {
+      "confidence": null,
+      "end_ms": 12010,
+      "index": 58,
+      "source": "paraformer-zh",
+      "start_ms": 11910,
+      "text": "个"
+    },
+    {
+      "confidence": null,
+      "end_ms": 12090,
+      "index": 59,
+      "source": "paraformer-zh",
+      "start_ms": 12010,
+      "text": "世"
+    },
+    {
+      "confidence": null,
+      "end_ms": 12290,
+      "index": 60,
+      "source": "paraformer-zh",
+      "start_ms": 12090,
+      "text": "界"
+    },
+    {
+      "confidence": null,
+      "end_ms": 12390,
+      "index": 61,
+      "source": "paraformer-zh",
+      "start_ms": 12290,
+      "text": "没"
+    },
+    {
+      "confidence": null,
+      "end_ms": 12570,
+      "index": 62,
+      "source": "paraformer-zh",
+      "start_ms": 12390,
+      "text": "有"
+    },
+    {
+      "confidence": null,
+      "end_ms": 12690,
+      "index": 63,
+      "source": "paraformer-zh",
+      "start_ms": 12570,
+      "text": "正"
+    },
+    {
+      "confidence": null,
+      "end_ms": 12925,
+      "index": 64,
+      "source": "paraformer-zh",
+      "start_ms": 12690,
+      "text": "义"
+    }
+  ]
+}

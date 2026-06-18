@@ -1,0 +1,190 @@
+[
+  {
+    "asr_token_range": [
+      0,
+      22
+    ],
+    "diagnostics": {
+      "candidate_count": 230,
+      "candidate_window": {
+        "end_token_index": 22,
+        "start_token_index": 0
+      },
+      "matched_chars": 23,
+      "selected_candidate_rank": 1,
+      "text_similarity": 1.0,
+      "total_normalized_chars": 23,
+      "unmatched_manuscript_chars": []
+    },
+    "duration_ms": 4160,
+    "end_ms": 4570,
+    "index": 0,
+    "manuscript_char_range": [
+      0,
+      25
+    ],
+    "match_score": 1.0,
+    "matched_asr_text": "正是因为存在绝对正义所以我们接受现实的相对正义",
+    "matched_token_indexes": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22
+    ],
+    "normalized_char_range": [
+      0,
+      23
+    ],
+    "normalized_text": "正是因为存在绝对正义所以我们接受现实的相对正义",
+    "paragraph_index": 0,
+    "raw_end_ms": 4570,
+    "raw_start_ms": 410,
+    "start_ms": 410,
+    "status": "ok",
+    "text": "正是因为存在绝对正义，所以我们接受现实的相对正义。",
+    "time_adjusted": false
+  },
+  {
+    "asr_token_range": [
+      23,
+      48
+    ],
+    "diagnostics": {
+      "candidate_count": 247,
+      "candidate_window": {
+        "end_token_index": 48,
+        "start_token_index": 23
+      },
+      "matched_chars": 26,
+      "selected_candidate_rank": 1,
+      "text_similarity": 1.0,
+      "total_normalized_chars": 26,
+      "unmatched_manuscript_chars": []
+    },
+    "duration_ms": 4780,
+    "end_ms": 10010,
+    "index": 1,
+    "manuscript_char_range": [
+      25,
+      53
+    ],
+    "match_score": 1.0,
+    "matched_asr_text": "但是不要因为现实的相对正义我们就认为这个世界没有正义",
+    "matched_token_indexes": [
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48
+    ],
+    "normalized_char_range": [
+      23,
+      49
+    ],
+    "normalized_text": "但是不要因为现实的相对正义我们就认为这个世界没有正义",
+    "paragraph_index": 0,
+    "raw_end_ms": 10010,
+    "raw_start_ms": 5230,
+    "start_ms": 5230,
+    "status": "ok",
+    "text": "但是不要因为现实的相对正义，我们就认为这个世界没有正义。",
+    "time_adjusted": false
+  },
+  {
+    "asr_token_range": [
+      49,
+      64
+    ],
+    "diagnostics": {
+      "candidate_count": 35,
+      "candidate_window": {
+        "end_token_index": 64,
+        "start_token_index": 49
+      },
+      "matched_chars": 16,
+      "selected_candidate_rank": 1,
+      "text_similarity": 1.0,
+      "total_normalized_chars": 16,
+      "unmatched_manuscript_chars": []
+    },
+    "duration_ms": 2455,
+    "end_ms": 12925,
+    "index": 2,
+    "manuscript_char_range": [
+      53,
+      70
+    ],
+    "match_score": 1.0,
+    "matched_asr_text": "因为如果当你认为这个世界没有正义",
+    "matched_token_indexes": [
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64
+    ],
+    "normalized_char_range": [
+      49,
+      65
+    ],
+    "normalized_text": "因为如果当你认为这个世界没有正义",
+    "paragraph_index": 0,
+    "raw_end_ms": 12925,
+    "raw_start_ms": 10470,
+    "start_ms": 10470,
+    "status": "ok",
+    "text": "因为如果当你认为这个世界没有正义。",
+    "time_adjusted": false
+  }
+]

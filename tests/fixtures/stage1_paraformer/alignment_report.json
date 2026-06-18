@@ -1,0 +1,76 @@
+{
+  "alignment": {
+    "global_match_score": 1.0,
+    "opcodes": [
+      {
+        "asr_range": [
+          0,
+          65
+        ],
+        "manuscript_range": [
+          0,
+          65
+        ],
+        "tag": "equal"
+      }
+    ],
+    "unmapped_asr_tokens": [],
+    "unmatched_manuscript_chars": []
+  },
+  "asr": {
+    "model": "paraformer-zh:/Users/sakana/PyEnv/paraformer",
+    "provider": "paraformer-zh",
+    "text": "正 是 因 为 存 在 绝 对 正 义 所 以 我 们 接 受 现 实 的 相 对 正 义 但 是 不 要 因 为 现 实 的 相 对 正 义 我 们 就 认 为 这 个 世 界 没 有 正 义 因 为 如 果 当 你 认 为 这 个 世 界 没 有 正 义",
+    "token_count": 65
+  },
+  "inputs": {
+    "audio": "tests/fixtures/stage1_paraformer/audio.mp3",
+    "audio_format": "mp3",
+    "manuscript": "tests/fixtures/stage1_paraformer/manuscript.txt"
+  },
+  "low_confidence_sentences": [],
+  "normalization": {
+    "asr_normalized_text": "正是因为存在绝对正义所以我们接受现实的相对正义但是不要因为现实的相对正义我们就认为这个世界没有正义因为如果当你认为这个世界没有正义",
+    "manuscript_normalized_text": "正是因为存在绝对正义所以我们接受现实的相对正义但是不要因为现实的相对正义我们就认为这个世界没有正义因为如果当你认为这个世界没有正义",
+    "strategy": "nfkc_lower_remove_punctuation_symbols_whitespace"
+  },
+  "segmentation": {
+    "sentence_count": 3,
+    "sentences": [
+      {
+        "boundary": "punctuation",
+        "char_end": 25,
+        "char_start": 0,
+        "index": 0,
+        "normalized_end": 23,
+        "normalized_start": 0,
+        "normalized_text": "正是因为存在绝对正义所以我们接受现实的相对正义",
+        "paragraph_index": 0,
+        "text": "正是因为存在绝对正义，所以我们接受现实的相对正义。"
+      },
+      {
+        "boundary": "punctuation",
+        "char_end": 53,
+        "char_start": 25,
+        "index": 1,
+        "normalized_end": 49,
+        "normalized_start": 23,
+        "normalized_text": "但是不要因为现实的相对正义我们就认为这个世界没有正义",
+        "paragraph_index": 0,
+        "text": "但是不要因为现实的相对正义，我们就认为这个世界没有正义。"
+      },
+      {
+        "boundary": "punctuation",
+        "char_end": 70,
+        "char_start": 53,
+        "index": 2,
+        "normalized_end": 65,
+        "normalized_start": 49,
+        "normalized_text": "因为如果当你认为这个世界没有正义",
+        "paragraph_index": 0,
+        "text": "因为如果当你认为这个世界没有正义。"
+      }
+    ],
+    "strategy": "regex"
+  }
+}

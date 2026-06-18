@@ -1,0 +1,42 @@
+[project]
+name = "funasr-timeline"
+version = "0.1.0"
+description = "Generate manuscript-based sentence timelines from ASR token timestamps."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "funasr>=1.3.10",
+    "jieba>=0.42.1",
+    "torch>=2.12.0",
+    "torchaudio>=2.11.0",
+]
+
+[project.scripts]
+funasr-timeline = "funasr_timeline.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18.0",
+    "pytest>=8.4.0",
+    "ruff>=0.14.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.0,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["funasr_timeline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

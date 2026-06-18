@@ -1,0 +1,35 @@
+[
+  {
+    "boundary": "punctuation",
+    "char_end": 25,
+    "char_start": 0,
+    "index": 0,
+    "normalized_end": 23,
+    "normalized_start": 0,
+    "normalized_text": "正是因为存在绝对正义所以我们接受现实的相对正义",
+    "paragraph_index": 0,
+    "text": "正是因为存在绝对正义，所以我们接受现实的相对正义。"
+  },
+  {
+    "boundary": "punctuation",
+    "char_end": 53,
+    "char_start": 25,
+    "index": 1,
+    "normalized_end": 49,
+    "normalized_start": 23,
+    "normalized_text": "但是不要因为现实的相对正义我们就认为这个世界没有正义",
+    "paragraph_index": 0,
+    "text": "但是不要因为现实的相对正义，我们就认为这个世界没有正义。"
+  },
+  {
+    "boundary": "punctuation",
+    "char_end": 70,
+    "char_start": 53,
+    "index": 2,
+    "normalized_end": 65,
+    "normalized_start": 49,
+    "normalized_text": "因为如果当你认为这个世界没有正义",
+    "paragraph_index": 0,
+    "text": "因为如果当你认为这个世界没有正义。"
+  }
+]

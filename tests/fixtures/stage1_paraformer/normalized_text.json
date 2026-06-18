@@ -1,0 +1,792 @@
+{
+  "asr": {
+    "chars": [
+      {
+        "normalized_char": "正",
+        "normalized_index": 0,
+        "token_index": 0,
+        "token_text": "正"
+      },
+      {
+        "normalized_char": "是",
+        "normalized_index": 1,
+        "token_index": 1,
+        "token_text": "是"
+      },
+      {
+        "normalized_char": "因",
+        "normalized_index": 2,
+        "token_index": 2,
+        "token_text": "因"
+      },
+      {
+        "normalized_char": "为",
+        "normalized_index": 3,
+        "token_index": 3,
+        "token_text": "为"
+      },
+      {
+        "normalized_char": "存",
+        "normalized_index": 4,
+        "token_index": 4,
+        "token_text": "存"
+      },
+      {
+        "normalized_char": "在",
+        "normalized_index": 5,
+        "token_index": 5,
+        "token_text": "在"
+      },
+      {
+        "normalized_char": "绝",
+        "normalized_index": 6,
+        "token_index": 6,
+        "token_text": "绝"
+      },
+      {
+        "normalized_char": "对",
+        "normalized_index": 7,
+        "token_index": 7,
+        "token_text": "对"
+      },
+      {
+        "normalized_char": "正",
+        "normalized_index": 8,
+        "token_index": 8,
+        "token_text": "正"
+      },
+      {
+        "normalized_char": "义",
+        "normalized_index": 9,
+        "token_index": 9,
+        "token_text": "义"
+      },
+      {
+        "normalized_char": "所",
+        "normalized_index": 10,
+        "token_index": 10,
+        "token_text": "所"
+      },
+      {
+        "normalized_char": "以",
+        "normalized_index": 11,
+        "token_index": 11,
+        "token_text": "以"
+      },
+      {
+        "normalized_char": "我",
+        "normalized_index": 12,
+        "token_index": 12,
+        "token_text": "我"
+      },
+      {
+        "normalized_char": "们",
+        "normalized_index": 13,
+        "token_index": 13,
+        "token_text": "们"
+      },
+      {
+        "normalized_char": "接",
+        "normalized_index": 14,
+        "token_index": 14,
+        "token_text": "接"
+      },
+      {
+        "normalized_char": "受",
+        "normalized_index": 15,
+        "token_index": 15,
+        "token_text": "受"
+      },
+      {
+        "normalized_char": "现",
+        "normalized_index": 16,
+        "token_index": 16,
+        "token_text": "现"
+      },
+      {
+        "normalized_char": "实",
+        "normalized_index": 17,
+        "token_index": 17,
+        "token_text": "实"
+      },
+      {
+        "normalized_char": "的",
+        "normalized_index": 18,
+        "token_index": 18,
+        "token_text": "的"
+      },
+      {
+        "normalized_char": "相",
+        "normalized_index": 19,
+        "token_index": 19,
+        "token_text": "相"
+      },
+      {
+        "normalized_char": "对",
+        "normalized_index": 20,
+        "token_index": 20,
+        "token_text": "对"
+      },
+      {
+        "normalized_char": "正",
+        "normalized_index": 21,
+        "token_index": 21,
+        "token_text": "正"
+      },
+      {
+        "normalized_char": "义",
+        "normalized_index": 22,
+        "token_index": 22,
+        "token_text": "义"
+      },
+      {
+        "normalized_char": "但",
+        "normalized_index": 23,
+        "token_index": 23,
+        "token_text": "但"
+      },
+      {
+        "normalized_char": "是",
+        "normalized_index": 24,
+        "token_index": 24,
+        "token_text": "是"
+      },
+      {
+        "normalized_char": "不",
+        "normalized_index": 25,
+        "token_index": 25,
+        "token_text": "不"
+      },
+      {
+        "normalized_char": "要",
+        "normalized_index": 26,
+        "token_index": 26,
+        "token_text": "要"
+      },
+      {
+        "normalized_char": "因",
+        "normalized_index": 27,
+        "token_index": 27,
+        "token_text": "因"
+      },
+      {
+        "normalized_char": "为",
+        "normalized_index": 28,
+        "token_index": 28,
+        "token_text": "为"
+      },
+      {
+        "normalized_char": "现",
+        "normalized_index": 29,
+        "token_index": 29,
+        "token_text": "现"
+      },
+      {
+        "normalized_char": "实",
+        "normalized_index": 30,
+        "token_index": 30,
+        "token_text": "实"
+      },
+      {
+        "normalized_char": "的",
+        "normalized_index": 31,
+        "token_index": 31,
+        "token_text": "的"
+      },
+      {
+        "normalized_char": "相",
+        "normalized_index": 32,
+        "token_index": 32,
+        "token_text": "相"
+      },
+      {
+        "normalized_char": "对",
+        "normalized_index": 33,
+        "token_index": 33,
+        "token_text": "对"
+      },
+      {
+        "normalized_char": "正",
+        "normalized_index": 34,
+        "token_index": 34,
+        "token_text": "正"
+      },
+      {
+        "normalized_char": "义",
+        "normalized_index": 35,
+        "token_index": 35,
+        "token_text": "义"
+      },
+      {
+        "normalized_char": "我",
+        "normalized_index": 36,
+        "token_index": 36,
+        "token_text": "我"
+      },
+      {
+        "normalized_char": "们",
+        "normalized_index": 37,
+        "token_index": 37,
+        "token_text": "们"
+      },
+      {
+        "normalized_char": "就",
+        "normalized_index": 38,
+        "token_index": 38,
+        "token_text": "就"
+      },
+      {
+        "normalized_char": "认",
+        "normalized_index": 39,
+        "token_index": 39,
+        "token_text": "认"
+      },
+      {
+        "normalized_char": "为",
+        "normalized_index": 40,
+        "token_index": 40,
+        "token_text": "为"
+      },
+      {
+        "normalized_char": "这",
+        "normalized_index": 41,
+        "token_index": 41,
+        "token_text": "这"
+      },
+      {
+        "normalized_char": "个",
+        "normalized_index": 42,
+        "token_index": 42,
+        "token_text": "个"
+      },
+      {
+        "normalized_char": "世",
+        "normalized_index": 43,
+        "token_index": 43,
+        "token_text": "世"
+      },
+      {
+        "normalized_char": "界",
+        "normalized_index": 44,
+        "token_index": 44,
+        "token_text": "界"
+      },
+      {
+        "normalized_char": "没",
+        "normalized_index": 45,
+        "token_index": 45,
+        "token_text": "没"
+      },
+      {
+        "normalized_char": "有",
+        "normalized_index": 46,
+        "token_index": 46,
+        "token_text": "有"
+      },
+      {
+        "normalized_char": "正",
+        "normalized_index": 47,
+        "token_index": 47,
+        "token_text": "正"
+      },
+      {
+        "normalized_char": "义",
+        "normalized_index": 48,
+        "token_index": 48,
+        "token_text": "义"
+      },
+      {
+        "normalized_char": "因",
+        "normalized_index": 49,
+        "token_index": 49,
+        "token_text": "因"
+      },
+      {
+        "normalized_char": "为",
+        "normalized_index": 50,
+        "token_index": 50,
+        "token_text": "为"
+      },
+      {
+        "normalized_char": "如",
+        "normalized_index": 51,
+        "token_index": 51,
+        "token_text": "如"
+      },
+      {
+        "normalized_char": "果",
+        "normalized_index": 52,
+        "token_index": 52,
+        "token_text": "果"
+      },
+      {
+        "normalized_char": "当",
+        "normalized_index": 53,
+        "token_index": 53,
+        "token_text": "当"
+      },
+      {
+        "normalized_char": "你",
+        "normalized_index": 54,
+        "token_index": 54,
+        "token_text": "你"
+      },
+      {
+        "normalized_char": "认",
+        "normalized_index": 55,
+        "token_index": 55,
+        "token_text": "认"
+      },
+      {
+        "normalized_char": "为",
+        "normalized_index": 56,
+        "token_index": 56,
+        "token_text": "为"
+      },
+      {
+        "normalized_char": "这",
+        "normalized_index": 57,
+        "token_index": 57,
+        "token_text": "这"
+      },
+      {
+        "normalized_char": "个",
+        "normalized_index": 58,
+        "token_index": 58,
+        "token_text": "个"
+      },
+      {
+        "normalized_char": "世",
+        "normalized_index": 59,
+        "token_index": 59,
+        "token_text": "世"
+      },
+      {
+        "normalized_char": "界",
+        "normalized_index": 60,
+        "token_index": 60,
+        "token_text": "界"
+      },
+      {
+        "normalized_char": "没",
+        "normalized_index": 61,
+        "token_index": 61,
+        "token_text": "没"
+      },
+      {
+        "normalized_char": "有",
+        "normalized_index": 62,
+        "token_index": 62,
+        "token_text": "有"
+      },
+      {
+        "normalized_char": "正",
+        "normalized_index": 63,
+        "token_index": 63,
+        "token_text": "正"
+      },
+      {
+        "normalized_char": "义",
+        "normalized_index": 64,
+        "token_index": 64,
+        "token_text": "义"
+      }
+    ],
+    "text": "正是因为存在绝对正义所以我们接受现实的相对正义但是不要因为现实的相对正义我们就认为这个世界没有正义因为如果当你认为这个世界没有正义"
+  },
+  "manuscript": {
+    "chars": [
+      {
+        "normalized_char": "正",
+        "normalized_index": 0,
+        "original_char": "正",
+        "original_index": 0
+      },
+      {
+        "normalized_char": "是",
+        "normalized_index": 1,
+        "original_char": "是",
+        "original_index": 1
+      },
+      {
+        "normalized_char": "因",
+        "normalized_index": 2,
+        "original_char": "因",
+        "original_index": 2
+      },
+      {
+        "normalized_char": "为",
+        "normalized_index": 3,
+        "original_char": "为",
+        "original_index": 3
+      },
+      {
+        "normalized_char": "存",
+        "normalized_index": 4,
+        "original_char": "存",
+        "original_index": 4
+      },
+      {
+        "normalized_char": "在",
+        "normalized_index": 5,
+        "original_char": "在",
+        "original_index": 5
+      },
+      {
+        "normalized_char": "绝",
+        "normalized_index": 6,
+        "original_char": "绝",
+        "original_index": 6
+      },
+      {
+        "normalized_char": "对",
+        "normalized_index": 7,
+        "original_char": "对",
+        "original_index": 7
+      },
+      {
+        "normalized_char": "正",
+        "normalized_index": 8,
+        "original_char": "正",
+        "original_index": 8
+      },
+      {
+        "normalized_char": "义",
+        "normalized_index": 9,
+        "original_char": "义",
+        "original_index": 9
+      },
+      {
+        "normalized_char": "所",
+        "normalized_index": 10,
+        "original_char": "所",
+        "original_index": 11
+      },
+      {
+        "normalized_char": "以",
+        "normalized_index": 11,
+        "original_char": "以",
+        "original_index": 12
+      },
+      {
+        "normalized_char": "我",
+        "normalized_index": 12,
+        "original_char": "我",
+        "original_index": 13
+      },
+      {
+        "normalized_char": "们",
+        "normalized_index": 13,
+        "original_char": "们",
+        "original_index": 14
+      },
+      {
+        "normalized_char": "接",
+        "normalized_index": 14,
+        "original_char": "接",
+        "original_index": 15
+      },
+      {
+        "normalized_char": "受",
+        "normalized_index": 15,
+        "original_char": "受",
+        "original_index": 16
+      },
+      {
+        "normalized_char": "现",
+        "normalized_index": 16,
+        "original_char": "现",
+        "original_index": 17
+      },
+      {
+        "normalized_char": "实",
+        "normalized_index": 17,
+        "original_char": "实",
+        "original_index": 18
+      },
+      {
+        "normalized_char": "的",
+        "normalized_index": 18,
+        "original_char": "的",
+        "original_index": 19
+      },
+      {
+        "normalized_char": "相",
+        "normalized_index": 19,
+        "original_char": "相",
+        "original_index": 20
+      },
+      {
+        "normalized_char": "对",
+        "normalized_index": 20,
+        "original_char": "对",
+        "original_index": 21
+      },
+      {
+        "normalized_char": "正",
+        "normalized_index": 21,
+        "original_char": "正",
+        "original_index": 22
+      },
+      {
+        "normalized_char": "义",
+        "normalized_index": 22,
+        "original_char": "义",
+        "original_index": 23
+      },
+      {
+        "normalized_char": "但",
+        "normalized_index": 23,
+        "original_char": "但",
+        "original_index": 25
+      },
+      {
+        "normalized_char": "是",
+        "normalized_index": 24,
+        "original_char": "是",
+        "original_index": 26
+      },
+      {
+        "normalized_char": "不",
+        "normalized_index": 25,
+        "original_char": "不",
+        "original_index": 27
+      },
+      {
+        "normalized_char": "要",
+        "normalized_index": 26,
+        "original_char": "要",
+        "original_index": 28
+      },
+      {
+        "normalized_char": "因",
+        "normalized_index": 27,
+        "original_char": "因",
+        "original_index": 29
+      },
+      {
+        "normalized_char": "为",
+        "normalized_index": 28,
+        "original_char": "为",
+        "original_index": 30
+      },
+      {
+        "normalized_char": "现",
+        "normalized_index": 29,
+        "original_char": "现",
+        "original_index": 31
+      },
+      {
+        "normalized_char": "实",
+        "normalized_index": 30,
+        "original_char": "实",
+        "original_index": 32
+      },
+      {
+        "normalized_char": "的",
+        "normalized_index": 31,
+        "original_char": "的",
+        "original_index": 33
+      },
+      {
+        "normalized_char": "相",
+        "normalized_index": 32,
+        "original_char": "相",
+        "original_index": 34
+      },
+      {
+        "normalized_char": "对",
+        "normalized_index": 33,
+        "original_char": "对",
+        "original_index": 35
+      },
+      {
+        "normalized_char": "正",
+        "normalized_index": 34,
+        "original_char": "正",
+        "original_index": 36
+      },
+      {
+        "normalized_char": "义",
+        "normalized_index": 35,
+        "original_char": "义",
+        "original_index": 37
+      },
+      {
+        "normalized_char": "我",
+        "normalized_index": 36,
+        "original_char": "我",
+        "original_index": 39
+      },
+      {
+        "normalized_char": "们",
+        "normalized_index": 37,
+        "original_char": "们",
+        "original_index": 40
+      },
+      {
+        "normalized_char": "就",
+        "normalized_index": 38,
+        "original_char": "就",
+        "original_index": 41
+      },
+      {
+        "normalized_char": "认",
+        "normalized_index": 39,
+        "original_char": "认",
+        "original_index": 42
+      },
+      {
+        "normalized_char": "为",
+        "normalized_index": 40,
+        "original_char": "为",
+        "original_index": 43
+      },
+      {
+        "normalized_char": "这",
+        "normalized_index": 41,
+        "original_char": "这",
+        "original_index": 44
+      },
+      {
+        "normalized_char": "个",
+        "normalized_index": 42,
+        "original_char": "个",
+        "original_index": 45
+      },
+      {
+        "normalized_char": "世",
+        "normalized_index": 43,
+        "original_char": "世",
+        "original_index": 46
+      },
+      {
+        "normalized_char": "界",
+        "normalized_index": 44,
+        "original_char": "界",
+        "original_index": 47
+      },
+      {
+        "normalized_char": "没",
+        "normalized_index": 45,
+        "original_char": "没",
+        "original_index": 48
+      },
+      {
+        "normalized_char": "有",
+        "normalized_index": 46,
+        "original_char": "有",
+        "original_index": 49
+      },
+      {
+        "normalized_char": "正",
+        "normalized_index": 47,
+        "original_char": "正",
+        "original_index": 50
+      },
+      {
+        "normalized_char": "义",
+        "normalized_index": 48,
+        "original_char": "义",
+        "original_index": 51
+      },
+      {
+        "normalized_char": "因",
+        "normalized_index": 49,
+        "original_char": "因",
+        "original_index": 53
+      },
+      {
+        "normalized_char": "为",
+        "normalized_index": 50,
+        "original_char": "为",
+        "original_index": 54
+      },
+      {
+        "normalized_char": "如",
+        "normalized_index": 51,
+        "original_char": "如",
+        "original_index": 55
+      },
+      {
+        "normalized_char": "果",
+        "normalized_index": 52,
+        "original_char": "果",
+        "original_index": 56
+      },
+      {
+        "normalized_char": "当",
+        "normalized_index": 53,
+        "original_char": "当",
+        "original_index": 57
+      },
+      {
+        "normalized_char": "你",
+        "normalized_index": 54,
+        "original_char": "你",
+        "original_index": 58
+      },
+      {
+        "normalized_char": "认",
+        "normalized_index": 55,
+        "original_char": "认",
+        "original_index": 59
+      },
+      {
+        "normalized_char": "为",
+        "normalized_index": 56,
+        "original_char": "为",
+        "original_index": 60
+      },
+      {
+        "normalized_char": "这",
+        "normalized_index": 57,
+        "original_char": "这",
+        "original_index": 61
+      },
+      {
+        "normalized_char": "个",
+        "normalized_index": 58,
+        "original_char": "个",
+        "original_index": 62
+      },
+      {
+        "normalized_char": "世",
+        "normalized_index": 59,
+        "original_char": "世",
+        "original_index": 63
+      },
+      {
+        "normalized_char": "界",
+        "normalized_index": 60,
+        "original_char": "界",
+        "original_index": 64
+      },
+      {
+        "normalized_char": "没",
+        "normalized_index": 61,
+        "original_char": "没",
+        "original_index": 65
+      },
+      {
+        "normalized_char": "有",
+        "normalized_index": 62,
+        "original_char": "有",
+        "original_index": 66
+      },
+      {
+        "normalized_char": "正",
+        "normalized_index": 63,
+        "original_char": "正",
+        "original_index": 67
+      },
+      {
+        "normalized_char": "义",
+        "normalized_index": 64,
+        "original_char": "义",
+        "original_index": 68
+      }
+    ],
+    "text": "正是因为存在绝对正义所以我们接受现实的相对正义但是不要因为现实的相对正义我们就认为这个世界没有正义因为如果当你认为这个世界没有正义"
+  }
+}
