@@ -270,7 +270,7 @@ uv run funasr-timeline \
   --llm-config configs/llm-siliconflow.toml
 ```
 
-LLM 会在一次请求中接收多段文本，并要求 XML 按 `<block id="...">` 独立返回每段的 `<segment>`。请求默认设置 `enable_thinking = false`，程序只解析最终 `message.content`，不读取或回退到推理字段。程序优先使用 XML 解析，失败时回退到正则提取。LLM 输出必须保留原文标点，且同一 block 内所有 segment 直接拼接后必须与对应 input block 原文完全一致；`<block id="">` 也必须与输入 `<input_block id="">` 完全一致。校验通过后，程序再从原稿切片生成最终分句文本，并按规则去掉分句两端的边界标点。LLM 新增空格、删掉标点、改写数字品牌词或漏掉正文都会校验失败。校验失败会直接报错，不自动回退到其他分句器。完整流程和独立分句会在输出目录写出 `llm_segmentation_diagnostics.json`，包含请求 block、原始响应、解析后的 segments 和失败时的覆盖诊断。`[[NO_SPLIT]]...[[/NO_SPLIT]]` 保护段由代码强制整体保留，不依赖模型遵守。
+LLM 会在一次请求中接收多段文本，并要求模型只输出“在原文中插入换行后的文本”，不输出 XML、JSON、解释、标题或 block id。多个输入 block 之间使用固定分隔行 `<<<BLOCK_SEPARATOR>>>`。请求默认设置 `enable_thinking = false`，程序只解析最终 `message.content`，不读取或回退到推理字段。LLM 输出必须保留原文标点，同一 block 内所有输出行直接拼接后必须与对应 input block 原文完全一致；校验通过后，程序再从原稿切片生成最终分句文本，并按规则去掉分句两端的边界标点。prompt 会强调常规口播字幕优先控制在 4 到 12 个中文字符左右，每个分句去掉首尾边界标点后的中文字符硬上限为 14 个；英文、数字、标点符号不计入长度。超过上限会作为 `segment_too_long` 校验失败进入 LLM 反馈修复流程，要求模型按意群边界、自然停顿、并列枚举、动作切换或软断点继续拆分。品牌、商品名、权益短语、链接引导、数字单位、英文型号和 CTA 表达允许适当更长，但仍需遵守 14 个中文字符上限，并尽量避免拆坏关键词。LLM 新增空格、删掉标点、改写数字品牌词、漏掉正文或输出过长分句都会校验失败。校验失败会直接报错，不自动回退到其他分句器。完整流程和独立分句会在输出目录写出 `llm_segmentation_diagnostics.json`，包含请求 block、原始响应、解析后的 segments 和失败时的覆盖诊断。`[[NO_SPLIT]]...[[/NO_SPLIT]]` 保护段由代码强制整体保留，不依赖模型遵守。
 
 ## 匹配和时间轴规则
 

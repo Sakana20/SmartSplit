@@ -33,6 +33,7 @@ class _FakeResponse:
 class _FakeAsyncClient:
     requests: list[dict[str, Any]] = []
     response_content = ""
+    response_contents: list[str] = []
     response_payload: dict[str, object] | None = None
 
     def __init__(self, *args: object, **kwargs: object) -> None:
@@ -47,7 +48,8 @@ class _FakeAsyncClient:
 
     async def post(self, url: str, **kwargs: object) -> _FakeResponse:
         self.requests.append({"url": url, **kwargs})
-        return _FakeResponse(self.response_content, self.response_payload)
+        content = self.response_contents.pop(0) if self.response_contents else self.response_content
+        return _FakeResponse(content, self.response_payload)
 
 
 def test_llm_segmenter_splits_multiple_blocks_in_one_request(
@@ -56,18 +58,14 @@ def test_llm_segmenter_splits_multiple_blocks_in_one_request(
     import funasr_timeline.segmentation.llm as llm_segmentation
 
     _FakeAsyncClient.requests = []
+    _FakeAsyncClient.response_contents = []
     _FakeAsyncClient.response_payload = None
     _FakeAsyncClient.response_content = """
-<segmentation>
-  <block id="block-0">
-    <segment>第一段。</segment>
-    <segment>第二段。</segment>
-  </block>
-  <block id="block-1">
-    <segment>第三段，</segment>
-    <segment>继续。</segment>
-  </block>
-</segmentation>
+第一段。
+第二段。
+<<<BLOCK_SEPARATOR>>>
+第三段，
+继续。
 """
     monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _FakeAsyncClient)
 
@@ -83,10 +81,65 @@ def test_llm_segmenter_splits_multiple_blocks_in_one_request(
     prompt = payload["messages"][0]["content"]
     assert "第一段。第二段。" in prompt
     assert "第三段，继续。" in prompt
+    assert "不要输出 XML" in prompt
+    assert "不要输出 JSON" in prompt
     assert "只允许插入分句边界" in prompt
     assert "标点符号也属于原文字符" in prompt
-    assert "直接拼接后，必须与对应 input_block 原文完全一致" in prompt
-    assert '输出 <block id=""> 必须与输入 <input_block id=""> 完全一致' in prompt
+    assert "所有输出行直接拼接后，必须与对应 input_block 原文完全一致" in prompt
+    assert "常规口播字幕优先控制在 4 到 12 个中文字符左右" in prompt
+    assert "中文字符必须不超过 14 个" in prompt
+    assert "英文、数字、标点符号不计入长度" in prompt
+    assert "特别" in prompt
+    assert "再比如" in prompt
+    assert "不要为了字幕观感在数字、英文、单位之间添加空格" in prompt
+
+
+def test_llm_segmenter_retries_when_segment_exceeds_hard_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import funasr_timeline.segmentation.llm as llm_segmentation
+
+    _FakeAsyncClient.requests = []
+    _FakeAsyncClient.response_payload = None
+    _FakeAsyncClient.response_contents = [
+        "天气热的时候最怕空气闷闷的，这款便携手持风扇轻松带来凉爽体验。",
+        "天气热的时候\n最怕空气闷闷的，\n这款便携手持风扇\n轻松带来凉爽体验。",
+    ]
+    monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _FakeAsyncClient)
+
+    result = LlmSentenceSegmenter(_config()).segment(
+        "天气热的时候最怕空气闷闷的，这款便携手持风扇轻松带来凉爽体验。"
+    )
+
+    assert [segment.text for segment in result.segments] == [
+        "天气热的时候",
+        "最怕空气闷闷的",
+        "这款便携手持风扇",
+        "轻松带来凉爽体验",
+    ]
+    assert len(_FakeAsyncClient.requests) == 2
+    retry_prompt = _FakeAsyncClient.requests[1]["json"]["messages"][0]["content"]
+    assert "segment_too_long" in retry_prompt
+    assert "按意群边界继续拆分" in retry_prompt
+
+
+def test_llm_segmenter_length_check_counts_only_chinese_chars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import funasr_timeline.segmentation.llm as llm_segmentation
+
+    _FakeAsyncClient.requests = []
+    _FakeAsyncClient.response_payload = None
+    _FakeAsyncClient.response_contents = []
+    _FakeAsyncClient.response_content = """
+iPhone15手机壳、500ml矿泉水、2kg大米。
+"""
+    monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _FakeAsyncClient)
+
+    result = LlmSentenceSegmenter(_config()).segment("iPhone15手机壳、500ml矿泉水、2kg大米。")
+
+    assert [segment.text for segment in result.segments] == ["iPhone15手机壳、500ml矿泉水、2kg大米"]
+    assert len(_FakeAsyncClient.requests) == 1
 
 
 def test_llm_segmenter_keeps_protected_block_as_single_segment(
@@ -96,10 +149,9 @@ def test_llm_segmenter_keeps_protected_block_as_single_segment(
 
     _FakeAsyncClient.response_payload = None
     _FakeAsyncClient.response_content = """
-<segmentation>
-  <block id="block-0"><segment>开头。</segment></block>
-  <block id="block-1"><segment>结尾。</segment></block>
-</segmentation>
+开头。
+<<<BLOCK_SEPARATOR>>>
+结尾。
 """
     monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _FakeAsyncClient)
     text = f"开头。{NO_SPLIT_START}这里。不要切！{NO_SPLIT_END}结尾。"
@@ -110,15 +162,15 @@ def test_llm_segmenter_keeps_protected_block_as_single_segment(
     assert [segment.boundary for segment in result.segments] == ["llm", "protected", "llm"]
 
 
-def test_llm_segmenter_falls_back_to_regex_xml_parsing(
+def test_llm_segmenter_accepts_plaintext_lines_with_boundary_punctuation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import funasr_timeline.segmentation.llm as llm_segmentation
 
     _FakeAsyncClient.response_payload = None
     _FakeAsyncClient.response_content = """
-前面多余文本
-<block id="block-0"><segment>第一段。</segment><segment>第二段。</segment></block>
+第一段。
+第二段。
 """
     monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _FakeAsyncClient)
 
@@ -134,12 +186,8 @@ def test_llm_segmenter_removes_boundary_punctuation_after_exact_location(
 
     _FakeAsyncClient.response_payload = None
     _FakeAsyncClient.response_content = """
-<segmentation>
-  <block id="block-0">
-    <segment>满减后只要9.9元，</segment>
-    <segment>还能叠加最高12元无门槛红包。</segment>
-  </block>
-</segmentation>
+满减后只要9.9元，
+还能叠加最高12元无门槛红包。
 """
     monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _FakeAsyncClient)
 
@@ -160,17 +208,19 @@ def test_llm_segmenter_raises_when_llm_adds_spaces(
 
     _FakeAsyncClient.response_payload = None
     _FakeAsyncClient.response_content = """
-<segmentation>
-  <block id="block-0">
-    <segment>满减后只要 9.9 元，</segment>
-    <segment>还能叠加最高12元无门槛红包。</segment>
-  </block>
-</segmentation>
+满减后只要 9.9 元，
+还能叠加最高12元无门槛红包。
 """
     monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _FakeAsyncClient)
 
-    with pytest.raises(ValueError, match="不是原文顺序子串"):
+    with pytest.raises(ValueError, match="重试后仍未通过校验"):
         LlmSentenceSegmenter(_config()).segment("满减后只要9.9元，还能叠加最高12元无门槛红包。")
+
+    payload = _FakeAsyncClient.requests[-1]["json"]
+    prompt = payload["messages"][0]["content"]
+    assert "不要为了字幕观感在数字、英文、单位之间添加空格" in prompt
+    assert "9.9元" in prompt
+    assert "iPhone15" in prompt
 
 
 def test_llm_segmenter_raises_when_output_does_not_cover_original(
@@ -180,13 +230,11 @@ def test_llm_segmenter_raises_when_output_does_not_cover_original(
 
     _FakeAsyncClient.response_payload = None
     _FakeAsyncClient.response_content = """
-<segmentation>
-  <block id="block-0"><segment>第一段。</segment></block>
-</segmentation>
+第一段。
 """
     monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _FakeAsyncClient)
 
-    with pytest.raises(ValueError, match="未完整覆盖原文"):
+    with pytest.raises(ValueError, match="重试后仍未通过校验"):
         LlmSentenceSegmenter(_config()).segment("第一段。第二段。")
 
 
@@ -199,24 +247,23 @@ def test_llm_segmenter_writes_validation_diagnostics_on_failure(
     diagnostics_path = tmp_path / "llm_segmentation_diagnostics.json"
     _FakeAsyncClient.response_payload = None
     _FakeAsyncClient.response_content = """
-<segmentation>
-  <block id="block-0"><segment>如果你今天刚好要买纸巾。</segment></block>
-</segmentation>
+如果你今天刚好要买纸巾。
 """
     monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _FakeAsyncClient)
 
-    with pytest.raises(ValueError, match="未直接拼接覆盖原文"):
+    with pytest.raises(ValueError, match="重试后仍未通过校验"):
         LlmSentenceSegmenter(_config(diagnostics_path=diagnostics_path)).segment(
             "长句测试：如果你今天刚好要买纸巾。"
         )
 
     diagnostics = json.loads(diagnostics_path.read_text(encoding="utf-8"))
     assert diagnostics["status"] == "failed"
-    assert diagnostics["response"]["content"] == _FakeAsyncClient.response_content.strip()
-    assert diagnostics["parsed"] == {"block-0": ["如果你今天刚好要买纸巾。"]}
-    assert diagnostics["validation"]["failed_block_id"] == "block-0"
-    assert diagnostics["validation"]["reason"] == "gap_before_segment"
-    assert diagnostics["validation"]["gap"].startswith("长句测试")
+    assert diagnostics["parsed"] == {}
+    assert diagnostics["validation"]["reason"] == "retry_exhausted"
+    last_error = diagnostics["validation"]["last_error"]
+    assert last_error["diagnostics"]["failed_block_id"] == "block-0"
+    assert last_error["diagnostics"]["reason"] == "text_not_equal"
+    assert last_error["previous_output"] == _FakeAsyncClient.response_content.strip()
 
 
 def test_llm_segmenter_reports_empty_content_diagnostics(

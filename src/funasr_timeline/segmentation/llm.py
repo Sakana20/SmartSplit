@@ -24,6 +24,8 @@ from funasr_timeline.segmentation.protection import (
 
 DEFAULT_LLM_CONFIG_PATH = Path("configs/llm-siliconflow.toml")
 _BLOCK_SEPARATOR = "<<<BLOCK_SEPARATOR>>>"
+_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS = 12
+_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS = 14
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,11 +121,25 @@ class LlmSentenceSegmenter:
             len(prepared_text),
         )
 
-        response = (
-            _run_async(self._segment_blocks(prompt_blocks))
-            if prompt_blocks
-            else _LlmSegmentationResponse(content="", payload={}, parsed={}, finish_reason=None)
-        )
+        try:
+            response = (
+                _run_async(self._segment_blocks(prompt_blocks))
+                if prompt_blocks
+                else _LlmSegmentationResponse(content="", payload={}, parsed={}, finish_reason=None)
+            )
+        except LlmSegmentLocationError as error:
+            self._write_diagnostics(
+                status="failed",
+                prompt_blocks=prompt_blocks,
+                response=_LlmSegmentationResponse(
+                    content="",
+                    payload={},
+                    parsed={},
+                    finish_reason=None,
+                ),
+                validation=error.diagnostics,
+            )
+            raise
 
         self._write_diagnostics(
             status="parsed",
@@ -331,6 +347,8 @@ class LlmSentenceSegmenter:
                 "max_tokens": self.config.max_tokens,
                 "enable_thinking": self.config.enable_thinking,
                 "max_retries": self.config.max_retries,
+                "segment_target_max_chinese_chars": (_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS),
+                "segment_hard_max_chinese_chars": (_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS),
             },
             "request": {
                 "block_count": len(prompt_blocks),
@@ -475,10 +493,7 @@ def _parse_plaintext_segments(
 ) -> dict[str, tuple[str, ...]]:
     text = _strip_code_fence(content)
 
-    if len(blocks) == 1:
-        chunks = [text]
-    else:
-        chunks = text.split(_BLOCK_SEPARATOR)
+    chunks = [text] if len(blocks) == 1 else text.split(_BLOCK_SEPARATOR)
 
     if len(chunks) != len(blocks):
         raise LlmSegmentLocationError(
@@ -497,9 +512,7 @@ def _parse_plaintext_segments(
     for block, chunk in zip(blocks, chunks, strict=True):
         normalized_chunk = chunk.strip("\n")
         segments = tuple(
-            cleaned
-            for line in normalized_chunk.split("\n")
-            if (cleaned := _strip_segment_boundary_noise(line)) != ""
+            cleaned for line in normalized_chunk.split("\n") if (cleaned := line.strip()) != ""
         )
 
         logger.debug(
@@ -556,23 +569,43 @@ def _validate_parsed_segments(
         block = block_by_id[block_id]
         consumed_text = "".join(segment_texts)
 
-        original_core = _content_core(block.text)
-        consumed_core = _content_core(consumed_text)
-
-        if consumed_core != original_core:
+        if consumed_text != block.text:
             raise LlmSegmentLocationError(
-                f"LLM 分句结果宽松归一化后仍与原文不一致：block={block_id}",
+                f"LLM 分句结果未完整覆盖原文：block={block_id}",
                 {
-                    "reason": "normalized_content_not_equal",
+                    "reason": "text_not_equal",
                     "failed_block_id": block_id,
                     "original_text": block.text,
                     "consumed_text": consumed_text,
-                    "original_core": original_core,
-                    "consumed_core": consumed_core,
-                    "missing_hint": _first_difference_hint(original_core, consumed_core),
+                    "missing_hint": _first_difference_hint(block.text, consumed_text),
                     "segments": list(segment_texts),
                 },
             )
+
+        for segment_index, segment_text in enumerate(segment_texts):
+            content_text = _strip_segment_boundary_noise(segment_text)
+            chinese_char_count = _count_chinese_chars(content_text)
+
+            if chinese_char_count > _LLM_SEGMENT_HARD_MAX_CONTENT_CHARS:
+                raise LlmSegmentLocationError(
+                    f"LLM 分句结果超过长度上限：block={block_id} "
+                    f"segment_index={segment_index} chinese_chars={chinese_char_count}",
+                    {
+                        "reason": "segment_too_long",
+                        "failed_block_id": block_id,
+                        "segment_index": segment_index,
+                        "segment_text": segment_text,
+                        "content_text": content_text,
+                        "chinese_char_count": chinese_char_count,
+                        "target_max_chinese_chars": (_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS),
+                        "hard_max_chinese_chars": _LLM_SEGMENT_HARD_MAX_CONTENT_CHARS,
+                        "repair_hint": (
+                            "该分句过长，请在意群边界、自然停顿、并列枚举、"
+                            "动作切换或软断点处继续拆分。"
+                        ),
+                        "segments": list(segment_texts),
+                    },
+                )
 
 
 def _locate_segments_in_block(
@@ -648,7 +681,9 @@ def _locate_relaxed_spans(
                 start, _ = spans[-1]
                 spans[-1] = (start, cursor + 1)
             else:
-                pending_ignored_start = cursor if pending_ignored_start is None else pending_ignored_start
+                pending_ignored_start = (
+                    cursor if pending_ignored_start is None else pending_ignored_start
+                )
             cursor += 1
 
         start = pending_ignored_start if pending_ignored_start is not None else cursor
@@ -709,7 +744,6 @@ def _locate_relaxed_spans(
     return spans
 
 
-
 def _strip_segment_boundary_noise(text: str) -> str:
     """去除 LLM 单个分句首尾的标点、分隔符、空格、换行等非内容字符。"""
     start = 0
@@ -737,8 +771,17 @@ def _trim_span_boundary_noise(text: str, start: int, end: int) -> tuple[int, int
 
     return start, end
 
+
 def _content_core(text: str) -> str:
     return "".join(_normalize_content_char(char) for char in text if _is_content_char(char))
+
+
+def _count_chinese_chars(text: str) -> int:
+    return sum(1 for char in text if _is_cjk_char(char))
+
+
+def _is_cjk_char(char: str) -> bool:
+    return "\u4e00" <= char <= "\u9fff"
 
 
 def _is_content_char(char: str) -> bool:
@@ -777,8 +820,11 @@ def _error_to_retry_payload(
         "previous_output": previous_output,
         "repair_instruction": (
             "请重新输出完整结果。只需要表达分句换行。"
-            "程序会忽略空格、换行、标点和分隔符进行宽松校验，"
-            "但请不要遗漏任何文字、数字、英文和中文内容。"
+            "只允许插入分句边界，不允许新增、删除、替换或改写任何字符。"
+            "标点符号也属于原文字符，必须保留在输出行中。"
+            f"每个分句去掉边界标点后的中文字符必须不超过 "
+            f"{_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS} 个；"
+            "英文、数字、标点符号不计入长度。过长时按意群边界继续拆分。"
             f"多个 block 之间必须使用 {_BLOCK_SEPARATOR} 单独一行分隔。"
         ),
     }
@@ -817,11 +863,14 @@ def _render_prompt(
         blocks=blocks,
         examples=_FEW_SHOT_EXAMPLES,
         protected_phrases=_PROTECTED_PHRASES,
+        soft_split_markers=_SOFT_SPLIT_MARKERS,
         mixed_content_examples=_MIXED_CONTENT_EXAMPLES,
         previous_error=previous_error,
         previous_error_json=previous_error_json,
         previous_output=previous_output,
         block_separator=_BLOCK_SEPARATOR,
+        target_max_chinese_chars=_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS,
+        hard_max_chinese_chars=_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS,
     )
 
 
@@ -840,6 +889,14 @@ _PROTECTED_PHRASES = (
     "便携手持风扇",
 )
 
+_SOFT_SPLIT_MARKERS = (
+    "特别",
+    "直接",
+    "真的",
+    "比如",
+    "再比如",
+)
+
 _MIXED_CONTENT_EXAMPLES = (
     "9.9元",
     "99.9%",
@@ -855,20 +912,12 @@ _FEW_SHOT_EXAMPLES = (
     _FewShotExample(
         input_text="打开视频下方链接，先领最高12元无门槛红包，再看附近门店有没有你要的东西。",
         output_text=(
-            "打开视频下方链接，\n"
-            "先领最高12元无门槛红包，\n"
-            "再看附近门店有没有你要的东西。"
+            "打开视频下方链接，\n先领最高12元无门槛红包，\n再看附近门店有没有你要的东西。"
         ),
     ),
     _FewShotExample(
         input_text="iPhone15手机壳、500ml矿泉水、2kg大米、3.5L洗衣液、99.9%除菌湿巾。",
-        output_text=(
-            "iPhone15手机壳、\n"
-            "500ml矿泉水、\n"
-            "2kg大米、\n"
-            "3.5L洗衣液、\n"
-            "99.9%除菌湿巾。"
-        ),
+        output_text=("iPhone15手机壳、\n500ml矿泉水、\n2kg大米、\n3.5L洗衣液、\n99.9%除菌湿巾。"),
     ),
     _FewShotExample(
         input_text=(
@@ -902,10 +951,11 @@ _PROMPT_TEMPLATE = """你是一个中文短视频字幕分句助手。
 - 不要输出解释。
 - 只输出“在原文中插入换行后的文本”。
 - 每一行就是一个字幕分句。
-- 允许为了字幕观感在数字、英文、单位之间添加少量空格。
-- 不要遗漏中文、数字、英文内容。
-- 不要新增新的词语或句子。
-- 不要改变原文语义。
+- 只允许插入分句边界，不允许新增、删除、替换、改写任何字符。
+- 标点符号也属于原文字符，必须保留在输出行中，用于后续完整性校对。
+- 每个 block 内所有输出行直接拼接后，必须与对应 input_block 原文完全一致。
+- 不要为了字幕观感在数字、英文、单位之间添加空格。
+- 不要遗漏中文、数字、英文、标点或原文中的空格。
 
 多 block 规则：
 - 每个 input_block 必须按输入顺序输出。
@@ -917,12 +967,23 @@ _PROMPT_TEMPLATE = """你是一个中文短视频字幕分句助手。
 
 短视频字幕偏好：
 - 优先按口播自然停顿切分。
-- 通常每句 4 到 14 个中文字符左右。
+- 常规口播字幕优先控制在 4 到 {{ target_max_chinese_chars }} 个中文字符左右。
+- 每个分句去掉首尾边界标点后，中文字符必须不超过 {{ hard_max_chinese_chars }} 个。
+- 英文、数字、标点符号不计入长度；只计算中文文字部分长度。
+- 如果某个分句超过 {{ hard_max_chinese_chars }} 个中文字符，必须按意群边界继续拆分。
 - 品牌、商品名、权益短语、链接引导、数字单位、英文型号可以适当更长。
-- 可以在逗号、顿号、句号、分号、语义转折、并列枚举、动作切换处断开。
+- 这些较长片段仍需遵守 {{ hard_max_chinese_chars }} 个中文字符上限，不要为了字数拆坏关键词。
+- 可以把过长分句按“主语/动作/结果”“条件/动作”“商品/卖点”“权益/CTA”等意群边界继续拆开。
+- 优先在逗号、顿号、句号、分号、语义转折、并列枚举、动作切换处断开。
+- 枚举商品、规格、场景时，可以按单个枚举项拆分。
 - 商品名、品牌名、红包权益、链接引导、数字单位、英文型号尽量不要拆开。
 - CTA 类表达如“点击视频下方链接”“打开下方链接”“直接看看”尽量保持完整。
-- 如果不确定，宁可保持更长一句，也不要漏掉内容。
+- 如果不确定，宁可保持更长一句，也不要冒险改字、漏字或拆坏关键词。
+
+可参考的口播软断点：
+{% for marker in soft_split_markers -%}
+- {{ marker }}
+{% endfor %}
 
 保护短语尽量不要拆开：
 {% for phrase in protected_phrases -%}
@@ -953,8 +1014,13 @@ Few-shot 示例：
 修复要求：
 - 不要解释。
 - 只重新选择换行位置。
-- 不要遗漏中文、数字、英文内容。
-- 程序会忽略标点、空格、换行、分隔符后进行内容校验。
+- 只允许插入分句边界，不允许新增、删除、替换、改写任何字符。
+- 标点符号也属于原文字符，必须保留在输出行中。
+- 每个 block 内所有输出行直接拼接后，必须与对应 input_block 原文完全一致。
+- 不要为了字幕观感在数字、英文、单位之间添加空格。
+- 每个分句去掉首尾边界标点后，中文字符必须不超过 {{ hard_max_chinese_chars }} 个。
+- 英文、数字、标点符号不计入长度。
+- 过长时按意群边界继续拆分。
 - 如果有多个 block，必须用 {{ block_separator }} 单独一行分隔。
 {% endif %}
 
