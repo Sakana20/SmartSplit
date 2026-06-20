@@ -13,7 +13,7 @@ from funasr_timeline.segmentation import (
 
 
 def test_segmenter_factory_creates_regex_segmenter() -> None:
-    assert available_segmenters() == ("jieba-subtitle", "regex")
+    assert available_segmenters() == ("jieba-subtitle", "llm", "regex")
     assert isinstance(create_segmenter("regex"), RegexSentenceSegmenter)
     assert isinstance(create_segmenter("jieba-subtitle"), JiebaSubtitleSegmenter)
 

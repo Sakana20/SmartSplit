@@ -65,8 +65,9 @@ FunASR 的 Paraformer 示例通常会在结果对象中暴露 timestamp 信息�
 - 默认模型目录为 `/Users/sakana/PyEnv/paraformer`。
 - 默认设备为 `mps`。
 - 设置 `disable_update=True`，避免每次初始化时检查 FunASR 更新。
-- 将 FunASR 返回的逐字空格文本和 timestamp 列表转换为项目标准 `WordTimeline`。
+- 将 FunASR 返回的文本和 timestamp 列表转换为项目标准 `WordTimeline`。
 - 当文本包含标点但 timestamp 不包含标点时，忽略标点后再建立 token。
+- 当少量连续英文或数字片段被 FunASR 合并到单个 timestamp 时，将对应片段合并为多字符 ASR token；下游对齐仍会展开 token 文本。
 - 标准输出中 `provider` 和 token `source` 均使用 `paraformer-zh`。
 
 当前已将一套真实模型推理结果固定到 `tests/fixtures/stage1_paraformer/`。该 fixture 包含 `.mp3` 输入、匹配稿件、当前 6 个 JSON 输出和 `sentence_timeline.srt`，可作为第二阶段匹配逻辑和渲染逻辑的稳定输入。

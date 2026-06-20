@@ -9,8 +9,14 @@ from funasr_timeline.asr.paraformer_zh_service import (
     DEFAULT_PARAFORMER_MODEL_DIR,
     ParaformerZhAsrService,
 )
+from funasr_timeline.forced_alignment import (
+    create_forced_alignment_service,
+    load_aligner_config,
+)
+from funasr_timeline.forced_alignment.config import TimelineProvider
+from funasr_timeline.logging import configure_logging, print_output_paths
 from funasr_timeline.pipeline import run_pipeline, run_segmentation
-from funasr_timeline.segmentation import available_segmenters, create_segmenter
+from funasr_timeline.segmentation.factory import available_segmenters, create_segmenter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,10 +41,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="分句实现。当前默认使用 regex。",
     )
     parser.add_argument(
+        "--llm-config",
+        type=Path,
+        default=Path("configs/llm-siliconflow.toml"),
+        help="LLM 分句配置文件路径，仅在 --segmenter llm 时读取。",
+    )
+    parser.add_argument(
+        "--timeline-provider",
+        choices=["asr-fuzzy", "qwen3-forced", "hybrid"],
+        help="时间轴来源。默认读取 aligner 配置；未配置时使用 hybrid。",
+    )
+    parser.add_argument(
+        "--aligner-config",
+        type=Path,
+        default=Path("configs/aligner-qwen3.toml"),
+        help="forced aligner 和 hybrid 时间轴配置文件路径。",
+    )
+    parser.add_argument(
         "--asr-provider",
         choices=["mock", "paraformer-zh"],
-        default="mock",
-        help="ASR 服务实现。第一阶段默认使用 mock。",
+        help="ASR 服务实现；未提供时读取 aligner 配置。",
     )
     parser.add_argument(
         "--mock-word-timeline",
@@ -56,13 +78,19 @@ def build_parser() -> argparse.ArgumentParser:
         default="mps",
         help="paraformer-zh 推理设备，例如 mps、cpu、cuda:0",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="关闭调试日志，仅保留错误和 argparse 输出。",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    segmenter = create_segmenter(args.segmenter)
+    configure_logging(quiet=args.quiet)
+    segmenter = create_segmenter(args.segmenter, llm_config_path=args.llm_config)
 
     if args.segment_only:
         paths = run_segmentation(
@@ -70,22 +98,39 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             segmenter=segmenter,
         )
-        for name, path in paths.items():
-            print(f"{name}: {path}")
+        print_output_paths(paths)
         return 0
 
     if args.audio is None:
         parser.error("完整流程需要提供 --audio；若只需要分句请使用 --segment-only")
 
-    if args.asr_provider == "mock":
-        if args.mock_word_timeline is None:
-            parser.error("--asr-provider mock 需要提供 --mock-word-timeline")
-        asr_service: AsrService = MockAsrService(args.mock_word_timeline)
-    else:
-        asr_service = ParaformerZhAsrService(
-            model_dir=args.paraformer_model_dir,
-            device=args.paraformer_device,
-        )
+    aligner_config = load_aligner_config(args.aligner_config)
+    timeline_provider: TimelineProvider = args.timeline_provider or aligner_config.timeline.provider
+    asr_provider = args.asr_provider or aligner_config.asr.provider
+
+    asr_service: AsrService | None = None
+    if timeline_provider in {"asr-fuzzy", "hybrid"}:
+        if asr_provider == "mock":
+            if args.mock_word_timeline is None:
+                parser.error("--asr-provider mock 需要提供 --mock-word-timeline")
+            asr_service = MockAsrService(args.mock_word_timeline)
+        else:
+            asr_service = ParaformerZhAsrService(
+                model_dir=(
+                    args.paraformer_model_dir
+                    if args.paraformer_model_dir != DEFAULT_PARAFORMER_MODEL_DIR
+                    else aligner_config.paraformer_zh.model_dir
+                ),
+                device=(
+                    args.paraformer_device
+                    if args.paraformer_device != "mps"
+                    else aligner_config.paraformer_zh.device
+                ),
+            )
+
+    forced_alignment_service = None
+    if timeline_provider in {"qwen3-forced", "hybrid"}:
+        forced_alignment_service = create_forced_alignment_service(aligner_config.qwen3_forced)
 
     paths = run_pipeline(
         manuscript_path=args.manuscript,
@@ -94,9 +139,12 @@ def main(argv: list[str] | None = None) -> int:
         asr_service=asr_service,
         segmenter=segmenter,
         segments_path=args.segments,
+        timeline_provider=timeline_provider,
+        forced_alignment_service=forced_alignment_service,
+        forced_alignment_language=aligner_config.qwen3_forced.language,
+        telemetry_config=aligner_config.telemetry,
     )
-    for name, path in paths.items():
-        print(f"{name}: {path}")
+    print_output_paths(paths)
     return 0
 
 

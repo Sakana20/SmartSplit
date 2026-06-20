@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from loguru import logger
+
 from funasr_timeline.asr.base import AsrToken
-from funasr_timeline.segmentation import SentenceSegment
+from funasr_timeline.segmentation.base import SentenceSegment
 from funasr_timeline.sentence_matching import SentenceMatchResult
 
 
@@ -57,6 +59,12 @@ def merge_sentence_timelines(
     tokens: list[AsrToken],
     matches: list[SentenceMatchResult],
 ) -> list[SentenceTimelineItem]:
+    logger.debug(
+        "合并句子时间轴开始：segments={} tokens={} matches={}",
+        len(segments),
+        len(tokens),
+        len(matches),
+    )
     token_by_index = {token.index: token for token in tokens}
     match_by_sentence_index = {match.sentence_index: match for match in matches}
     items: list[SentenceTimelineItem] = []
@@ -89,6 +97,12 @@ def merge_sentence_timelines(
         status = match.status
 
         if start_ms is not None and previous_end_ms is not None and start_ms < previous_end_ms:
+            logger.debug(
+                "修正重叠时间：sentence_index={} raw_start_ms={} previous_end_ms={}",
+                segment.index,
+                start_ms,
+                previous_end_ms,
+            )
             start_ms = previous_end_ms
             time_adjusted = True
 
@@ -131,6 +145,7 @@ def merge_sentence_timelines(
             )
         )
 
+    logger.debug("合并句子时间轴完成：items={}", len(items))
     return items
 
 

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 
+from loguru import logger
+
 from funasr_timeline.asr.base import AsrToken
 from funasr_timeline.normalization import normalize_text
 
@@ -65,6 +67,12 @@ def normalize_asr_tokens(tokens: list[AsrToken]) -> tuple[str, list[NormalizedAs
 
 def align_texts(manuscript_text: str, tokens: list[AsrToken]) -> AlignmentResult:
     asr_text, asr_chars = normalize_asr_tokens(tokens)
+    logger.debug(
+        "全文顺序对齐开始：manuscript_chars={} asr_chars={} tokens={}",
+        len(manuscript_text),
+        len(asr_text),
+        len(tokens),
+    )
     matcher = SequenceMatcher(a=manuscript_text, b=asr_text, autojunk=False)
 
     manuscript_to_token: dict[int, int] = {}
@@ -96,6 +104,12 @@ def align_texts(manuscript_text: str, tokens: list[AsrToken]) -> AlignmentResult
     ]
     unmapped_asr = [index for index in range(len(asr_text)) if index not in matched_asr]
     global_score = len(matched_manuscript) / len(manuscript_text) if manuscript_text else 1.0
+    logger.debug(
+        "全文顺序对齐完成：score={:.4f} opcodes={} mapped_chars={}",
+        global_score,
+        len(opcodes),
+        len(manuscript_to_token),
+    )
 
     return AlignmentResult(
         manuscript_text=manuscript_text,

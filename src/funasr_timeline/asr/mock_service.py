@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from funasr_timeline.asr.base import AsrInfo, AsrService, AsrToken, AudioInfo, WordTimeline
 
 
@@ -14,12 +16,14 @@ class MockAsrService(AsrService):
         self.timeline_path = timeline_path
 
     def transcribe(self, audio_path: Path) -> WordTimeline:
+        logger.debug("读取 mock ASR 时间轴：timeline={} audio={}", self.timeline_path, audio_path)
         with self.timeline_path.open("r", encoding="utf-8") as file:
             payload = json.load(file)
 
         audio = _load_audio_info(payload.get("audio", {}), audio_path)
         asr = _load_asr_info(payload.get("asr", {}), payload)
         tokens = [_load_token(item, index) for index, item in enumerate(payload.get("tokens", []))]
+        logger.debug("mock ASR 时间轴读取完成：tokens={} provider={}", len(tokens), asr.provider)
         return WordTimeline(audio=audio, asr=asr, tokens=tokens)
 
 

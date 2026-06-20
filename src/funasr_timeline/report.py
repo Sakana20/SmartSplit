@@ -6,7 +6,7 @@ from funasr_timeline.alignment import AlignmentResult
 from funasr_timeline.asr.base import WordTimeline
 from funasr_timeline.merge import SentenceTimelineItem
 from funasr_timeline.normalization import NormalizedText
-from funasr_timeline.segmentation import SentenceSegment
+from funasr_timeline.segmentation.base import SentenceSegment
 
 
 def build_alignment_report(
@@ -17,6 +17,7 @@ def build_alignment_report(
     sentence_items: list[SentenceTimelineItem],
     alignment: AlignmentResult,
     segmenter_name: str,
+    telemetry_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     token_by_index = {token.index: token for token in word_timeline.tokens}
     low_confidence = [
@@ -31,7 +32,7 @@ def build_alignment_report(
         }
     ]
 
-    return {
+    report = {
         "inputs": {
             "manuscript": manuscript_path,
             "audio": word_timeline.audio.path,
@@ -79,3 +80,6 @@ def build_alignment_report(
         },
         "low_confidence_sentences": low_confidence,
     }
+    if telemetry_summary is not None:
+        report["telemetry"] = telemetry_summary
+    return report

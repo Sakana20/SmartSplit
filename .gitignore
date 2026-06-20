@@ -18,3 +18,7 @@ test_temp/
 # Tooling / local environment
 .env
 .env.*
+configs/*.local.toml
+
+*.env
+*.toml

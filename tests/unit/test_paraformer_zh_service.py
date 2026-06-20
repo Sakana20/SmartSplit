@@ -37,8 +37,30 @@ def test_paraformer_zh_result_to_timeline_ignores_punctuation_when_timestamps_om
     assert [token.text for token in timeline.tokens] == ["你", "好", "世", "界"]
 
 
+def test_paraformer_zh_result_to_timeline_merges_ascii_runs_when_timestamps_group_them() -> None:
+    timeline = paraformer_zh_result_to_timeline(
+        result={
+            "text": "买iPhone15手机壳",
+            "timestamp": [
+                [0, 100],
+                [100, 200],
+                [200, 300],
+                [300, 400],
+                [400, 500],
+                [500, 600],
+            ],
+        },
+        audio_path=Path("input.mp3"),
+        model_dir=Path("/models/paraformer"),
+    )
+
+    assert [token.text for token in timeline.tokens] == ["买", "iPhone1", "5", "手", "机", "壳"]
+    assert "".join(token.text for token in timeline.tokens) == "买iPhone15手机壳"
+    assert len(timeline.tokens) == 6
+
+
 def test_paraformer_zh_result_to_timeline_requires_matching_timestamp_count() -> None:
-    with pytest.raises(ValueError, match="数量无法对应"):
+    with pytest.raises(ValueError, match="数量无法对应.*ascii_run_candidates"):
         paraformer_zh_result_to_timeline(
             result={
                 "text": "你好",

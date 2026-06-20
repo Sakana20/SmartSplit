@@ -50,7 +50,7 @@ uv run mypy src
 - mock ASR 服务，用于 fixture 驱动和常规测试。
 - 本地 `paraformer-zh` 服务实现，内部使用 FunASR `AutoModel`，默认模型目录为 `/Users/sakana/PyEnv/paraformer`。
 - macOS MPS 推理支持，默认设备为 `mps`。
-- 可通过 `--segmenter` 选择分句实现，当前内置 `regex` 和 `jieba-subtitle`。
+- 可通过 `--segmenter` 选择分句实现，当前内置 `regex`、`jieba-subtitle`，并支持可选在线 `llm` 分句。
 - 支持 `[[NO_SPLIT]]...[[/NO_SPLIT]]` 成对标记保护不分句片段。
 - 支持分句单独运行，输出一行一句的可编辑分句文本，并支持从编辑后的分句文本继续执行完整流程。
 - 基础文本归一化。
@@ -115,7 +115,8 @@ tests/fixtures/stage1_paraformer/
 ### 必须预留的扩展点
 
 - ASR 服务统一接口：每个真实 ASR 服务都实现同一接口。
-- 句子切分统一接口：当前内置 `regex` 和 `jieba-subtitle`，后续可继续增加实现。
+- Forced alignment 服务独立于 ASR 接口：该服务接收音频和真实文本，输出文本单元时间戳，不能伪装成 `AsrService`。
+- 句子切分统一接口：当前内置 `regex`、`jieba-subtitle` 和 `llm`，后续可继续增加实现。
 - 音频输入适配层：第一阶段接收 `.mp3`，后续扩展多格式检测和格式转换。
 - 渲染输出统一接口：当前已实现 SRT，后续可扩展 VTT、CSV 等格式。
 - 输出 schema 可扩展：保留中间字段和诊断字段，避免第二阶段缺少排查依据。
@@ -130,13 +131,25 @@ src/
       base.py
       paraformer_zh_service.py
       mock_service.py
+    segmentation/
+      __init__.py
+      base.py
+      factory.py
+      editable.py
+      normalization.py
+      protection.py
+      regex.py
+      jieba_subtitle.py
+      llm.py
+    render/
+      __init__.py
+      base.py
+      srt.py
     manuscript.py
-    segmentation.py
     normalization.py
     alignment.py
     sentence_matching.py
     merge.py
-    render.py
     report.py
     cli.py
 tests/
@@ -152,12 +165,15 @@ tests/
 - `asr/paraformer_zh_service.py` 放本地 `paraformer-zh` 模型接入实现。
 - `asr/mock_service.py` 用于测试和第一阶段可重复验证。
 - `manuscript.py` 负责 `.txt` 稿件读取和基础元数据。
-- `segmentation.py` 负责句子切分接口、`regex`、`jieba-subtitle`、保护标记和可编辑分句文本读写。
+- `segmentation/base.py` 定义句子切分接口和标准分句数据结构。
+- `segmentation/factory.py` 负责分句实现注册和创建。
+- `segmentation/regex.py`、`segmentation/jieba_subtitle.py`、`segmentation/llm.py` 分别放具体分句实现。
+- `segmentation/protection.py`、`segmentation/editable.py`、`segmentation/normalization.py` 放保护段、可编辑分句和归一化范围附加逻辑。
 - `normalization.py` 负责基础归一化。
 - `alignment.py` 负责顺序全局对齐。
 - `sentence_matching.py` 负责第二阶段的顺序窗口 fuzzy 句子匹配。
 - `merge.py` 负责句子级时间合并。
-- `render.py` 负责句子时间轴渲染接口和 SRT 输出。
+- `render/base.py` 负责句子时间轴渲染接口，`render/srt.py` 负责 SRT 输出。
 - `report.py` 负责诊断报告生成。
 - `cli.py` 负责命令行入口。
 
@@ -170,7 +186,8 @@ tests/
 - `--manuscript path/to/input.txt`
 - `--audio path/to/input.mp3`
 - `--output-dir path/to/output`
-- `--segmenter regex|jieba-subtitle`
+- `--segmenter regex|jieba-subtitle|llm`
+- `--llm-config configs/llm-siliconflow.toml`
 - `--segment-only`
 - `--segments path/to/editable_segments.txt`
 - `--asr-provider mock|paraformer-zh`
@@ -218,7 +235,7 @@ tests/
 - `mock`：读取 fixture `word_timeline.json`，用于常规测试。
 - `paraformer-zh`：使用本地 `paraformer-zh` 模型目录，通过 FunASR `AutoModel` 推理，默认设备为 `mps`。代码位于 `src/funasr_timeline/asr/paraformer_zh_service.py`。
 
-当前本地 `paraformer-zh` 推理会读取 FunASR 返回的 `text` 和 `timestamp` 字段，将去空白后的字符与 timestamp 一一对应，生成项目标准 token 时间轴。如果 ASR 文本包含标点但 timestamp 不包含标点，会忽略标点后再匹配。
+当前本地 `paraformer-zh` 推理会读取 FunASR 返回的 `text` 和 `timestamp` 字段，将去空白后的文本与 timestamp 对齐后生成项目标准 token 时间轴。如果 ASR 文本包含标点但 timestamp 不包含标点，会忽略标点后再匹配；如果 FunASR 对少量连续英文或数字片段只返回一个 timestamp，会将该片段合并为多字符 ASR token。下游对齐会继续展开 token 文本，因此最终仍以稿件原文为准。
 
 后续可继续接入或组合：
 
@@ -227,7 +244,7 @@ tests/
 
 ### 3. 稿件句子切分
 
-句子切分通过 `SentenceSegmenter` 接口实现，当前内置 `regex` 和 `jieba-subtitle` 两个实现。
+句子切分通过 `SentenceSegmenter` 接口实现，当前内置 `regex`、`jieba-subtitle` 和可选在线 `llm` 三个实现。
 
 默认强边界：
 
@@ -238,6 +255,8 @@ tests/
 - 段落换行
 
 `regex` 实现不按逗号切长句，适合保留自然句。`jieba-subtitle` 实现会先按强标点和段落形成基础范围，再把逗号、顿号等标点作为短语边界，去除标点后使用 jieba 分词拼接短句，默认目标为单句归一化文本不超过 10 个字符，并保证同一个词不会被切到两个句子中。该实现还内置少量短视频字幕常见软切分点，例如 `特别`、`直接`，用于把过长表达拆成更自然的语义短语。
+
+`llm` 实现通过 TOML 配置读取 OpenAI-compatible Chat Completions 端点、模型、超时和 API key 环境变量。prompt 使用 Jinja2 渲染，包含任务说明、短视频字幕约束、保护段说明、结构化 XML 输出约束和多样化 few-shot 示例，并把待分割文本放在最后。一次请求会提交多个文本段，模型必须按 `<block id="...">` 独立返回每段 `<segment>`，且输出 block id 必须与输入 input block id 完全一致；程序优先 XML 解析，失败时回退正则解析。LLM 输出必须保留原文标点，同一 block 内所有 segment 直接拼接后必须与原文完全一致。校验通过后，程序从原稿切片生成最终分句文本，并按规则去掉分句两端的边界标点。改写正文、新增空格、删掉标点或漏掉正文会直接报错，不自动回退。完整流程和独立分句会在输出目录写出 `llm_segmentation_diagnostics.json`，记录请求 block、原始响应、解析结果和失败覆盖诊断。
 
 稿件中可以用成对标记保护不需要自动分句的片段：
 
@@ -365,7 +384,7 @@ uv run funasr-timeline \
 
 ### 8. 字幕和表格导出
 
-当前已通过 `render.py` 提供渲染接口，并实现 `SrtTimelineRenderer`。pipeline 会基于最终 `sentence_timeline.json` 中的句子文本和无重叠时间范围生成：
+当前已通过 `render/base.py` 提供渲染接口，并在 `render/srt.py` 实现 `SrtTimelineRenderer`。pipeline 会基于最终 `sentence_timeline.json` 中的句子文本和无重叠时间范围生成：
 
 - `.srt`
 
@@ -387,6 +406,27 @@ SRT 渲染规则：
 
 第二阶段已在第一阶段真实 `paraformer-zh` token 级时间轴可用的基础上，改进句子到 token 时间范围的匹配方式。由于当前音频主要由 ground truth 稿件文本生成，不按真实多人对话或大量口语错乱场景设计，方案保持简单、顺序、可解释。
 
+## Qwen3 Forced Aligner 下一阶段方案
+
+下一阶段计划接入 `Qwen3-ForcedAligner-0.6B`，用于将真实稿件文本直接强制对齐到 TTS 音频时间窗。详细方案见 `docs/forced-aligner-plan.md`。
+
+已完成本地可行性验证：
+
+- 本地模型目录为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`。
+- 项目 `.venv` 中已可 import `qwen_asr.Qwen3ForcedAligner`。
+- macOS MPS 可用，推荐默认配置为 `device_map="mps"` 和 `dtype="bfloat16"`。
+- 在 `tests/fixtures/stage1_paraformer/audio.mp3` 上已跑通一次整篇文本推理。
+- `bfloat16` 加载约 2.6 秒，对齐约 3.5 秒，最大 RSS 约 866 MB。
+- 模型返回文本会跳过标点，归一化后可与稿件归一化文本一致。
+
+已确认边界：
+
+- 第一版假设输入音频均在 5 分钟以内，不实现长音频自动分块。
+- 默认时间轴策略改为 `hybrid`：同时运行 Qwen3 forced aligner 和 `paraformer-zh` ASR fuzzy。
+- `hybrid` 模式下 forced aligner 作为 primary 时间来源，ASR fuzzy 结果进入 telemetry，用于后续置信度分析。
+- CLI 应读取 aligner 配置文件，并根据 `timeline-provider` 选择 `asr-fuzzy`、`qwen3-forced` 或 `hybrid`。
+- 输出应新增 `forced_alignment.json` 和 `telemetry.json`，并在 `alignment_report.json` 中保留 telemetry 摘要。
+
 ### 第二阶段边界
 
 第二阶段继续遵守以下约束：
@@ -399,7 +439,7 @@ SRT 渲染规则：
 
 ### 分句方案
 
-分句继续通过 `segmentation.py` 的可替换接口实现，第二阶段先不扩展复杂规则。
+分句继续通过 `segmentation/base.py` 的可替换接口实现，第二阶段先不扩展复杂规则。
 
 默认规则：
 
@@ -556,7 +596,12 @@ SRT 渲染规则：
 
 提供至少一个小型端到端 fixture，覆盖命令行从输入文件到输出文件的流程。
 
-当前端到端测试使用 mock ASR 服务和小型 fixture。真实 `paraformer-zh` 端到端流程已手动验证，后续可作为可选测试加入。
+当前端到端测试包含两类：
+
+- 默认 CLI fixture 测试：使用 mock ASR、mock forced aligner 和小型 fixture，覆盖 CLI 从输入文件到 JSON/SRT 输出的流程。
+- 真实 demo 测试：复用剪映 demo 的长中文混合文本，调用剪映 TTS 生成音频，使用 LLM 分句，通过 `hybrid` 同时运行 Qwen3 forced aligner 和本地 `paraformer-zh`/FunASR ASR，并写出 `e2e_diagnostics.json`，用于检查句子数量、状态分布、telemetry 差异、TTS/音频转换/剪映草稿信息和报告摘要。
+
+真实 demo 测试位于 `tests/e2e/test_jianying_smartsplit_demo.py`，默认会随 pytest 执行。运行前需要准备 `configs/llm-siliconflow.toml`、`configs/aligner-qwen3.toml`、可 import 的剪映 Python 接口、TTS 后端、本地模型和 `FUNASR_TIMELINE_LLM_API_KEY`。
 
 ## 质量门禁
 
@@ -591,7 +636,7 @@ SRT 渲染规则：
 - 稿件使用 `.txt` 纯文本，内容为分段文本。
 - 第一阶段先跑通 `.mp3` 音频。
 - 后续需要支持 `.wav`、`.ogg` 等常见格式，或通过转换统一输入格式。
-- 句子切分保留接口，当前内置 `regex` 和 `jieba-subtitle`。
+- 句子切分保留接口，当前内置 `regex`、`jieba-subtitle` 和 `llm`。
 - 第一阶段 JSON 输出要尽可能丰富，服务于第二阶段分析调整。
 - 完整数字归一化、领域词、同义词等暂不处理；当前仅保留轻量数字读法匹配兼容。
 - 真实 ASR 模型通过统一接口接入；当前已实现本地 `paraformer-zh` 服务，内部使用 FunASR `AutoModel`。

@@ -21,6 +21,8 @@ def test_cli_generates_expected_files(tmp_path: Path) -> None:
             "mock",
             "--mock-word-timeline",
             str(fixture_dir / "word_timeline.json"),
+            "--timeline-provider",
+            "asr-fuzzy",
         ]
     )
 
@@ -32,6 +34,35 @@ def test_cli_generates_expected_files(tmp_path: Path) -> None:
     sentence_timeline = json.loads(sentence_timeline_path.read_text(encoding="utf-8"))
     assert len(sentence_timeline) == 2
     assert sentence_timeline[0]["status"] == "ok"
+
+
+def test_cli_can_run_hybrid_with_mock_forced_aligner(tmp_path: Path) -> None:
+    fixture_dir = Path("tests/fixtures")
+
+    exit_code = main(
+        [
+            "--manuscript",
+            str(fixture_dir / "manuscript.txt"),
+            "--audio",
+            str(fixture_dir / "audio.mp3"),
+            "--output-dir",
+            str(tmp_path),
+            "--segmenter",
+            "regex",
+            "--aligner-config",
+            str(fixture_dir / "forced_alignment" / "config.toml"),
+            "--mock-word-timeline",
+            str(fixture_dir / "word_timeline.json"),
+        ]
+    )
+
+    assert exit_code == 0
+    sentence_timeline = json.loads(
+        (tmp_path / "sentence_timeline.json").read_text(encoding="utf-8")
+    )
+    assert sentence_timeline[0]["start_ms"] == 120
+    assert (tmp_path / "forced_alignment.json").exists()
+    assert (tmp_path / "telemetry.json").exists()
 
 
 def test_cli_can_run_segmentation_only(tmp_path: Path) -> None:

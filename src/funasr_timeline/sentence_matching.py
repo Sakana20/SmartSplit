@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 
+from loguru import logger
+
 from funasr_timeline.asr.base import AsrToken
 from funasr_timeline.normalization import normalize_text
-from funasr_timeline.segmentation import SentenceSegment
+from funasr_timeline.segmentation.base import SentenceSegment
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,8 +44,10 @@ def match_sentences_to_tokens(
     """Match manuscript sentences to ASR tokens in order using small fuzzy windows."""
 
     if not tokens:
+        logger.debug("句子匹配跳过：ASR tokens 为空，segments={}", len(segments))
         return [_empty_match(segment, "no_match") for segment in segments]
 
+    logger.debug("句子匹配开始：segments={} tokens={}", len(segments), len(tokens))
     token_pos_by_index = {token.index: position for position, token in enumerate(tokens)}
     cursor_pos = 0
     results: list[SentenceMatchResult] = []
@@ -60,6 +64,7 @@ def match_sentences_to_tokens(
             max_token_pos=len(tokens),
         )
         if not candidates:
+            logger.debug("句子无候选匹配：sentence_index={} text={}", segment.index, segment.text)
             results.append(_empty_match(segment, "no_match"))
             continue
 
@@ -99,6 +104,13 @@ def match_sentences_to_tokens(
             status = "no_match"
         elif selected.score < low_confidence_threshold:
             status = "low_confidence"
+            logger.debug(
+                "句子低置信匹配：sentence_index={} score={:.4f} candidates={} text={}",
+                segment.index,
+                selected.score,
+                len(candidates),
+                segment.text,
+            )
 
         results.append(
             SentenceMatchResult(
@@ -127,6 +139,7 @@ def match_sentences_to_tokens(
         if asr_token_range[1] is not None:
             cursor_pos = token_pos_by_index[asr_token_range[1]] + 1
 
+    logger.debug("句子匹配完成：results={}", len(results))
     return results
 
 
@@ -138,6 +151,7 @@ def _build_candidates(
 ) -> list[_Candidate]:
     query = _normalize_match_text(segment.normalized_text)
     query_length = len(query)
+    # 顺序窗口只向后搜索，适配“稿件配音顺序稳定”的场景，并避免跨句抢占过远 token。
     min_chars = max(1, math.floor(query_length * 0.6))
     max_chars = max(min_chars, math.ceil(query_length * 1.5))
     search_limit = min(max_token_pos, cursor_pos + math.ceil(query_length * 2.5) + 10)

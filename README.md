@@ -9,7 +9,7 @@
 - mock ASR 时间轴输入。
 - 本地 `paraformer-zh` FunASR 推理，默认模型目录为 `/Users/sakana/PyEnv/paraformer`。
 - macOS MPS 推理，默认 `--paraformer-device mps`。
-- 可通过 `--segmenter` 选择分句实现，当前内置 `regex` 和 `jieba-subtitle`。
+- 可通过 `--segmenter` 选择分句实现，当前内置 `regex`、`jieba-subtitle` 和可选在线 `llm`。
 - 支持 `[[NO_SPLIT]]...[[/NO_SPLIT]]` 标记保护不分句片段。
 - 支持单独运行分句，导出一行一句的可编辑分句文本。
 - 基础文本归一化。
@@ -108,6 +108,18 @@ uv run funasr-timeline \
   --output-dir /tmp/funasr-segments \
   --segment-only \
   --segmenter jieba-subtitle
+```
+
+LLM 分句使用 OpenAI-compatible Chat Completions 端点，通过 TOML 配置读取：
+
+```bash
+export FUNASR_TIMELINE_LLM_API_KEY="sk-..."
+uv run funasr-timeline \
+  --manuscript path/to/manuscript.txt \
+  --output-dir /tmp/funasr-segments \
+  --segment-only \
+  --segmenter llm \
+  --llm-config configs/llm-siliconflow.toml
 ```
 
 该命令会输出：

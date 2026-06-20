@@ -10,13 +10,13 @@
 
 1. 读取 `.txt` 稿件。
 2. 根据分句器生成稿件分句，或读取人工编辑后的分句结果。
-3. 通过 ASR 服务生成 token 级时间轴。
-4. 对稿件文本和 ASR 文本做基础归一化。
-5. 将每个分句顺序 fuzzy 匹配到 ASR token timeline。
-6. 使用选中的 ASR 候选窗口完整 token 范围合并每个分句的开始和结束时间，并保证相邻句子时间不重叠。
+3. 根据 `--timeline-provider` 运行 ASR fuzzy、Qwen3 forced alignment 或 hybrid 时间轴分支。
+4. 对稿件文本、ASR 文本和 forced aligner 输出做基础归一化。
+5. 将每个分句映射到 ASR token timeline 或 forced alignment unit timeline。
+6. 合并每个分句的开始和结束时间，并保证相邻句子时间不重叠。
 7. 输出 JSON 诊断产物和 `sentence_timeline.srt`。
 
-当前实现重点面向“音频由 ground truth 稿件生成”的场景，因此默认按稿件顺序做局部 fuzzy 匹配，不按多人对话、插话或大段错序音频设计。
+当前实现重点面向“音频由 ground truth 稿件生成”的场景。CLI 默认使用 `hybrid` 时间轴策略：同时运行 Qwen3 forced alignment 和 ASR fuzzy 分支，最终时间默认采用 forced alignment，ASR fuzzy 结果作为 telemetry 保留。详细设计见 `docs/forced-aligner-plan.md`。
 
 ## 输入要求
 
@@ -114,6 +114,22 @@
 
 ## 完整流程命令
 
+### Hybrid Forced Aligner 模式
+
+默认完整流程会读取 `configs/aligner-qwen3.toml`。
+
+```bash
+uv run funasr-timeline \
+  --manuscript path/to/manuscript.txt \
+  --audio path/to/audio.mp3 \
+  --output-dir path/to/output \
+  --segmenter jieba-subtitle \
+  --timeline-provider hybrid \
+  --aligner-config configs/aligner-qwen3.toml
+```
+
+aligner 配置文件包含 Qwen3 forced aligner 和 ASR fuzzy 两部分配置。默认 Qwen3 配置为本地模型 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`、`device_map = "mps"`、`dtype = "bfloat16"`、`language = "Chinese"`。
+
 ### 使用本地 Paraformer
 
 ```bash
@@ -125,6 +141,18 @@ uv run funasr-timeline \
   --asr-provider paraformer-zh \
   --paraformer-model-dir /Users/sakana/PyEnv/paraformer \
   --paraformer-device mps
+```
+
+如果只想运行旧 ASR fuzzy 流程，可显式指定：
+
+```bash
+uv run funasr-timeline \
+  --manuscript path/to/manuscript.txt \
+  --audio path/to/audio.mp3 \
+  --output-dir path/to/output \
+  --segmenter jieba-subtitle \
+  --timeline-provider asr-fuzzy \
+  --asr-provider paraformer-zh
 ```
 
 ### 使用 mock ASR fixture
@@ -199,17 +227,54 @@ uv run funasr-timeline \
 | `--manuscript` | 是 | 无 | `.txt` 稿件路径。 |
 | `--audio` | 完整流程必填 | 无 | `.mp3` 音频路径。`--segment-only` 时不需要。 |
 | `--output-dir` | 是 | 无 | 输出目录。不存在会自动创建。 |
-| `--segmenter` | 否 | `regex` | 分句实现，可选 `regex`、`jieba-subtitle`。 |
+| `--segmenter` | 否 | `regex` | 分句实现，可选 `regex`、`jieba-subtitle`、`llm`。 |
+| `--llm-config` | `--segmenter llm` 时读取 | `configs/llm-siliconflow.toml` | OpenAI-compatible LLM 分句配置文件。 |
 | `--segment-only` | 否 | `false` | 只运行分句，输出可编辑分句文本和结构化分句 JSON。 |
 | `--segments` | 否 | 无 | 使用人工编辑后的一行一句文本替代自动分句结果。 |
-| `--asr-provider` | 否 | `mock` | ASR 服务，可选 `mock`、`paraformer-zh`。 |
+| `--timeline-provider` | 否 | 配置文件中 `timeline.provider`，未配置为 `hybrid` | 时间轴来源，可选 `asr-fuzzy`、`qwen3-forced`、`hybrid`。 |
+| `--aligner-config` | 否 | `configs/aligner-qwen3.toml` | forced aligner 与 hybrid 配置文件。 |
+| `--asr-provider` | 否 | 配置文件中 `asr.provider`，未配置为 `paraformer-zh` | ASR 服务，可选 `mock`、`paraformer-zh`。 |
 | `--mock-word-timeline` | mock 必填 | 无 | mock ASR 使用的 `word_timeline.json` 路径。 |
 | `--paraformer-model-dir` | 否 | `/Users/sakana/PyEnv/paraformer` | 本地 `paraformer-zh` 模型目录。 |
 | `--paraformer-device` | 否 | `mps` | 推理设备，例如 `mps`、`cpu`、`cuda:0`。 |
+| `--quiet` | 否 | `false` | 关闭默认 debug 日志，仅保留命令行错误输出。 |
+
+CLI 默认启用 debug 日志，便于检查稿件读取、ASR、分句、归一化、匹配、合并和文件写入等阶段。命令结束时会用 Rich 表格展示输出路径；该表格只影响终端显示，不会改变 JSON、SRT 或其他产物内容。
+
+## LLM 分句配置
+
+`llm` 分句使用 OpenAI-compatible Chat Completions 协议。服务商只通过 `base_url` 配置，不和具体厂商协议耦合。
+
+配置文件见 `configs/llm-siliconflow.toml`：
+
+```toml
+[llm]
+base_url = "https://api.siliconflow.cn/v1"
+model = "Qwen/Qwen3.5-9B"
+api_key_env = "FUNASR_TIMELINE_LLM_API_KEY"
+timeout_seconds = 240
+temperature = 0
+max_tokens = 8192
+enable_thinking = false
+```
+
+本地使用时通过环境变量提供密钥：
+
+```bash
+export FUNASR_TIMELINE_LLM_API_KEY="sk-..."
+uv run funasr-timeline \
+  --manuscript path/to/input.txt \
+  --output-dir path/to/segments \
+  --segment-only \
+  --segmenter llm \
+  --llm-config configs/llm-siliconflow.toml
+```
+
+LLM 会在一次请求中接收多段文本，并要求 XML 按 `<block id="...">` 独立返回每段的 `<segment>`。请求默认设置 `enable_thinking = false`，程序只解析最终 `message.content`，不读取或回退到推理字段。程序优先使用 XML 解析，失败时回退到正则提取。LLM 输出必须保留原文标点，且同一 block 内所有 segment 直接拼接后必须与对应 input block 原文完全一致；`<block id="">` 也必须与输入 `<input_block id="">` 完全一致。校验通过后，程序再从原稿切片生成最终分句文本，并按规则去掉分句两端的边界标点。LLM 新增空格、删掉标点、改写数字品牌词或漏掉正文都会校验失败。校验失败会直接报错，不自动回退到其他分句器。完整流程和独立分句会在输出目录写出 `llm_segmentation_diagnostics.json`，包含请求 block、原始响应、解析后的 segments 和失败时的覆盖诊断。`[[NO_SPLIT]]...[[/NO_SPLIT]]` 保护段由代码强制整体保留，不依赖模型遵守。
 
 ## 匹配和时间轴规则
 
-完整流程会把分句后的稿件文本顺序匹配到 ASR token timeline。
+`asr-fuzzy` 流程会把分句后的稿件文本顺序匹配到 ASR token timeline。`qwen3-forced` 流程会一次性对齐分句后的完整稿件文本，再按归一化 offset 把 forced alignment units 映射回分句。`hybrid` 会同时运行两者，并以 forced alignment 时间作为最终主时间。
 
 当前规则：
 
@@ -221,6 +286,8 @@ uv run funasr-timeline \
 - 相邻分句最终时间范围会做无重叠修正。
 - 匹配阶段支持轻量数字读法兼容，例如稿件 `12元` 可以对齐 ASR 的「十二元」。
 - 数字读法兼容只用于匹配和时间选择，不改变字幕正文。
+- forced aligner 输出如果跳过标点，会通过项目归一化 offset 继续映射到稿件分句。
+- hybrid 模式会把 ASR fuzzy 的句子时间、匹配分数和 token 范围写入 telemetry 和 `diagnostics.asr_fuzzy`。
 
 常见状态：
 
@@ -231,6 +298,9 @@ uv run funasr-timeline \
 | `no_match` | 没有找到可用候选。 |
 | `empty_after_normalization` | 分句归一化后为空，例如只有标点。 |
 | `invalid_time_range` | 时间范围非法，通常需要检查 ASR token 或匹配结果。 |
+| `forced_missing_unit` | forced alignment 输出无法覆盖该分句归一化范围。 |
+| `forced_empty_segment` | 分句归一化后为空，无法映射 forced units。 |
+| `forced_invalid_time_range` | forced alignment 单元产生非法时间范围。 |
 
 ## 输出文件
 
@@ -244,6 +314,13 @@ alignment.json
 sentence_timeline.json
 sentence_timeline.srt
 alignment_report.json
+```
+
+`qwen3-forced` 或 `hybrid` 模式还会生成：
+
+```text
+forced_alignment.json
+telemetry.json
 ```
 
 单独分句流程会生成：
@@ -314,6 +391,29 @@ ASR token 级时间轴。
 - `matched_token_indexes`：用于取时间的 ASR 候选窗口 token index，包含替换字和数字读法差异对应的 ASR token。
 - `matched_asr_text`：被选中的 ASR 候选窗口文本。
 - `diagnostics`：候选数量、相似度、未匹配字符等诊断信息。
+- hybrid 模式下 `start_ms` / `end_ms` 默认来自 forced alignment；`diagnostics.primary_timing_source` 为 `qwen3-forced`，`diagnostics.asr_fuzzy` 保存 ASR fuzzy 摘要。
+
+### `forced_alignment.json`
+
+Qwen3 forced alignment 标准化结果。
+
+主要内容：
+
+- aligner provider、model、device、dtype 和 language。
+- 输入文本、稿件归一化文本和 aligner 输出归一化文本。
+- `normalized_text_match`：两者是否完全一致。
+- `units`：每个 forced alignment unit 的 `index`、`text`、`normalized_text`、`start_ms`、`end_ms`。
+
+### `telemetry.json`
+
+hybrid 分析数据。
+
+主要内容：
+
+- `timeline_provider` 和 `primary`。
+- forced alignment 摘要和可选 units。
+- ASR fuzzy 摘要和可选 tokens。
+- 每句 forced 时间、ASR fuzzy 时间和两者差值。
 
 匹配阶段会做轻量数字读法归一化，例如 `12元` 可与 ASR 的 `十二元` 对齐。该归一化只用于匹配和时间轴选择，不改变最终字幕文本。
 
@@ -362,9 +462,41 @@ uv run mypy src
 
 当前项目要求这些命令通过后再认为实现完成。
 
+## 端到端测试
+
+`tests/e2e/test_jianying_smartsplit_demo.py` 默认运行真实 demo 链路：复用剪映 demo 中的长中文混合文本，调用剪映 TTS 生成音频，使用 LLM 分句，通过 `hybrid` 同时运行 Qwen3 forced aligner 和本地 `paraformer-zh`/FunASR ASR，并可把音频和 SRT 写回剪映草稿。测试成功时会额外写出 `e2e_diagnostics.json`，记录命令、文本长度、TTS 信息、音频转换、剪映草稿、句子数量、状态分布、telemetry 摘要和 report 摘要；子命令失败时会写出 `e2e_failure_diagnostics.json`，保留 TTS、音频转换和 stdout/stderr 尾部输出，方便定位。
+
+运行前需要本机具备可 import 的剪映 Python 接口、TTS 后端、本地 `paraformer-zh`、本地 Qwen3 forced aligner、可用 LLM API key 和配置：
+
+```bash
+set -a
+source configs/jianying-e2e.env
+set +a
+
+uv run pytest tests/e2e/test_jianying_smartsplit_demo.py -q
+```
+
+真实测试环境变量：
+
+| 环境变量 | 默认/示例 | 说明 |
+| --- | --- | --- |
+| `FUNASR_TIMELINE_E2E_JIANYING_SCRIPTS_PATH` | 无 | 可选。若 `jy_wrapper` 和 `universal_tts` 不能被当前 Python 环境直接 import，则填入包含这两个模块的脚本目录。 |
+| `FUNASR_TIMELINE_E2E_DRAFT` | `SmartSplit_E2E_Test` | 测试草稿名；测试会重建同名草稿。 |
+| `FUNASR_TIMELINE_E2E_VOICE_ID` | `BV005_streaming` | TTS 音色 ID。 |
+| `FUNASR_TIMELINE_E2E_LLM_CONFIG` | `configs/llm-siliconflow.toml` | LLM 分句配置。 |
+| `FUNASR_TIMELINE_LLM_API_KEY` | 无 | `configs/llm-siliconflow.toml` 默认读取的 API key 环境变量。 |
+| `FUNASR_TIMELINE_E2E_ALIGNER_CONFIG` | `configs/aligner-qwen3.toml` | 真实 forced aligner 与 ASR 配置。 |
+| `FUNASR_TIMELINE_E2E_WRITE_DRAFT` | `1` | 设置为 `0` 时只生成 TTS 和时间轴，不把音频/SRT 写回剪映草稿。 |
+
+配置文件处理建议：
+
+- `configs/llm-siliconflow.toml` 直接作为默认 LLM 配置使用，密钥仍通过 `FUNASR_TIMELINE_LLM_API_KEY` 提供。
+- `configs/aligner-qwen3.toml` 的模型路径已经按当前本机约定填写为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B` 和 `/Users/sakana/PyEnv/paraformer`。真实测试前请确认路径、`device_map = "mps"`、`dtype = "bfloat16"` 与当前环境一致。
+- `configs/jianying-e2e.env` 保存 demo e2e 的环境变量示例，不保存密钥；真实值应通过本地 shell 环境加载。
+
 当前状态：
 
 ```text
 uv run pytest
-# 24 passed, 1 warning
+# 默认会运行真实 demo e2e，需要本地模型、TTS、剪映 Python 接口和 LLM API key。
 ```

@@ -29,7 +29,7 @@ uv run funasr-timeline \
 test_temp/
 ```
 
-当前会生成 6 个 JSON 文件和 1 个 SRT 字幕文件：
+`asr-fuzzy` 流程会生成 6 个 JSON 文件和 1 个 SRT 字幕文件：
 
 - `word_timeline.json`
 - `manuscript_segments.json`
@@ -38,6 +38,11 @@ test_temp/
 - `sentence_timeline.json`
 - `sentence_timeline.srt`
 - `alignment_report.json`
+
+`qwen3-forced` 或 `hybrid` 流程会额外生成：
+
+- `forced_alignment.json`
+- `telemetry.json`
 
 单独分句命令会生成：
 
@@ -88,7 +93,7 @@ uv run funasr-timeline \
 
 ## `word_timeline.json`
 
-用途：保存 ASR 服务输出的标准化字符级或 token 级时间轴。mock 流程会把输入 fixture 原样转换为项目标准结构；`paraformer-zh` 流程会把 FunASR `text` 和 `timestamp` 转换为同一结构。
+用途：保存 ASR 服务输出的标准化字符级或 token 级时间轴。mock 流程会把输入 fixture 原样转换为项目标准结构；`paraformer-zh` 流程会把 FunASR `text` 和 `timestamp` 转换为同一结构。多数中文 token 是单字符；当 FunASR 对连续英文或数字片段只返回一个 timestamp 时，token 可能包含多个字符，下游归一化和匹配会再展开该 token 文本。
 
 Schema：
 
@@ -313,7 +318,7 @@ Schema：
 
 ## `sentence_timeline.json`
 
-用途：保存最终句子级时间轴。该文件是第一阶段最主要的业务输出，句子文本始终来自原始稿件。
+用途：保存最终句子级时间轴。该文件是最主要的业务输出，句子文本始终来自原始稿件。
 
 Schema：
 
@@ -365,12 +370,12 @@ Schema：
 - `index`：句子序号。
 - `text`：最终输出句子文本，来自原始稿件。
 - `paragraph_index`：段落序号。
-- `start_ms` / `end_ms`：句子时间范围，来自选中 ASR 候选窗口的首尾 token。
+- `start_ms` / `end_ms`：句子时间范围。`asr-fuzzy` 下来自选中 ASR 候选窗口的首尾 token；`qwen3-forced` 和 `hybrid` 下默认来自 forced alignment units。
 - `duration_ms`：句子持续时间。
 - `raw_start_ms` / `raw_end_ms`：顺序窗口 fuzzy 匹配直接得到的原始时间范围。
 - `time_adjusted`：最终时间是否因为无重叠约束被修正。
 - `match_score`：句子归一化文本和候选 ASR 文本的 fuzzy 相似度。
-- `status`：句子状态。当前常见值为 `ok`、`low_confidence`、`no_match`、`empty_after_normalization`、`invalid_time_range`。
+- `status`：句子状态。当前常见值为 `ok`、`low_confidence`、`no_match`、`empty_after_normalization`、`invalid_time_range`、`forced_missing_unit`、`forced_empty_segment`、`forced_invalid_time_range`。
 - `matched_token_indexes`：用于取时间的 ASR 候选窗口 token 序号，包含替换字和数字读法差异对应的 ASR token。
 - `matched_asr_text`：被选中的 ASR 候选窗口归一化文本。
 - `normalized_text`：句子归一化文本。
@@ -385,6 +390,10 @@ Schema：
 - `diagnostics.text_similarity`：句子归一化文本和候选 ASR 文本的 fuzzy 相似度。
 - `diagnostics.candidate_window`：最终选中候选窗口覆盖的 ASR token 范围。
 - `diagnostics.exact_matched_token_indexes`：候选窗口内与稿件字符完全相同的 ASR token，仅用于诊断，不直接决定最终时间范围。
+- `diagnostics.timeline_provider`：生成该时间轴的 provider，例如 `hybrid`。
+- `diagnostics.primary_timing_source`：主时间来源，hybrid 下为 `qwen3-forced`。
+- `diagnostics.forced_unit_range`：forced alignment unit 范围。
+- `diagnostics.asr_fuzzy`：hybrid 下保存 ASR fuzzy 句子摘要。
 
 匹配阶段会做轻量数字读法兼容，例如稿件 `12元` 可与 ASR 的「十二元」对齐。该兼容只用于匹配和时间轴选择，不改变最终字幕文本。
 
@@ -396,9 +405,60 @@ Schema：
 
 当前第二阶段已使用顺序窗口 fuzzy 匹配，并要求最终句子时间范围不重叠。若 `raw_start_ms` 早于上一句最终 `end_ms`，会将当前句最终 `start_ms` 修正为上一句最终 `end_ms`，同时将 `time_adjusted` 标记为 `true`。
 
+## `forced_alignment.json`
+
+用途：保存 forced aligner 的标准化输出，便于复核模型返回文本与稿件归一化文本是否一致，以及每个 forced unit 的时间范围。
+
+Schema：
+
+```json
+{
+  "audio": {
+    "path": "string",
+    "format": "string",
+    "duration_ms": "integer | null"
+  },
+  "aligner": {
+    "provider": "string",
+    "model": "string | null",
+    "device_map": "string | null",
+    "dtype": "string | null",
+    "language": "string"
+  },
+  "input_text": "string",
+  "normalized_text": "string",
+  "forced_normalized_text": "string",
+  "normalized_text_match": "boolean",
+  "units": [
+    {
+      "index": "integer",
+      "text": "string",
+      "start_ms": "integer",
+      "end_ms": "integer",
+      "normalized_text": "string"
+    }
+  ],
+  "diagnostics": {}
+}
+```
+
+## `telemetry.json`
+
+用途：保存 hybrid 置信度分析所需的双分支数据。第一版不做复杂自动仲裁，最终时间默认来自 forced alignment。
+
+主要字段：
+
+- `timeline_provider`：当前时间轴 provider。
+- `primary`：主时间来源。
+- `forced_alignment`：forced aligner 摘要，包含 provider、model、device、dtype、language、unit 数量和归一化文本一致性。
+- `asr_fuzzy`：ASR fuzzy 摘要，包含 provider、model、token 数量和全文匹配分数。
+- `sentences[].forced`：每句 forced 时间、unit 范围和状态。
+- `sentences[].asr_fuzzy`：每句 ASR fuzzy 时间、token 范围、匹配文本和匹配分数。
+- `sentences[].comparison`：forced 与 ASR fuzzy 的 start/end/duration 差值。
+
 ## `sentence_timeline.srt`
 
-用途：保存由第二阶段句子级时间轴渲染得到的 SRT 字幕文件。该产物通过 `render.py` 中的 `SrtTimelineRenderer` 生成。
+用途：保存由第二阶段句子级时间轴渲染得到的 SRT 字幕文件。该产物通过 `render/srt.py` 中的 `SrtTimelineRenderer` 生成。
 
 格式示例：
 
@@ -471,7 +531,13 @@ Schema：
       }
     ]
   },
-  "low_confidence_sentences": ["SentenceTimelineItem"]
+  "low_confidence_sentences": ["SentenceTimelineItem"],
+  "telemetry": {
+    "timeline_provider": "string",
+    "primary": "string",
+    "forced_alignment": {},
+    "asr_fuzzy": {}
+  }
 }
 ```
 
@@ -488,6 +554,7 @@ Schema：
 - `alignment.unmatched_manuscript_chars`：稿件中未匹配的归一化字符，包含原稿位置。
 - `alignment.unmapped_asr_tokens`：ASR 中未映射到稿件的字符或 token，包含时间范围。
 - `low_confidence_sentences`：低置信度或无时间句子的完整句子时间轴条目。
+- `telemetry`：可选 telemetry 摘要，包含双分支 provider、模型、数量和匹配分数，不嵌入完整 units 或 tokens。
 
 当前示例要点：
 
