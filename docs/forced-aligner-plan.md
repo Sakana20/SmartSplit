@@ -58,7 +58,7 @@
 
 - 暂时假设所有输入音频都在 5 分钟以内。
 - 第一版不实现长音频自动切块。
-- 输入音频仍沿用当前 `.mp3` 第一阶段约束。
+- 输入音频仍沿用当前完整流程的 `.mp3` 约束。
 - 语言默认使用 `Chinese`，允许文本中少量混杂英文和数字。
 - 最终句子文本以稿件分句原文为准，不使用 ASR 或 aligner 输出文本替换。
 - 默认时间轴策略为 `hybrid`。
@@ -116,7 +116,7 @@ CLI 应读取 aligner 配置文件，并根据 `timeline.provider` 选择具体�
 默认值：
 
 ```text
---timeline-provider hybrid
+--timeline-provider 读取 configs/aligner-qwen3.toml 中的 timeline.provider，默认配置为 hybrid
 --aligner-config configs/aligner-qwen3.toml
 ```
 
@@ -152,11 +152,12 @@ include_sentence_comparison = true
 
 - CLI 参数优先级高于配置文件。
 - `timeline.provider = "hybrid"` 时同时创建 ASR 服务和 forced aligner 服务。
-- `timeline.provider = "qwen3-forced"` 时可不运行 ASR，但仍允许用户显式打开 ASR telemetry。
+- `timeline.provider = "qwen3-forced"` 时只运行 forced aligner，不生成 ASR fuzzy 分支 telemetry。
 - `timeline.provider = "asr-fuzzy"` 保持当前流程。
 - `dtype` 初始支持 `bfloat16`、`float16`、`float32`。
 - 测试配置支持 `qwen3_forced.provider = "mock"` 和 `units_path`，用于默认测试绕过真实模型。
-- `quantization` 字段暂不生效，但可预留给后续 quant 模型。
+- `max_audio_seconds` 当前记录在配置和 forced alignment diagnostics 中；运行前真实音频时长检查仍是后续事项。
+- `quantization` 字段暂未实现，可预留给后续 quant 模型。
 
 ## 流程设计
 
@@ -232,7 +233,6 @@ Qwen3 forced aligner 返回的 item 可能是字、词或混合片段，不能�
 - `forced_empty_segment`
 - `forced_missing_unit`
 - `forced_invalid_time_range`
-- `forced_audio_too_long`
 
 最终 `SentenceTimelineItem.status` 是否复用现有 `ok`、`low_confidence` 等值，可在实现时决定；但 forced 细分状态应进入 diagnostics 或 telemetry。
 

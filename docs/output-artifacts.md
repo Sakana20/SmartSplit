@@ -3,7 +3,7 @@
 本文档记录当前示例命令、输出目录、每个 JSON 文件的内容、schema 和 SRT 字幕产物。当前仓库固定了两类示例：
 
 - mock ASR 示例：用于快速说明输出结构，命令输出目录可设为 `test_temp/`。
-- 真实 `paraformer-zh` 示例：固定在 `tests/fixtures/stage1_paraformer/`，可作为第二阶段匹配逻辑的输入样例。
+- 真实 `paraformer-zh` 示例：固定在 `tests/fixtures/stage1_paraformer/`，可作为 ASR fuzzy 匹配逻辑的输入样例。
 
 ## 示例命令
 
@@ -13,6 +13,7 @@ uv run funasr-timeline \
   --audio tests/fixtures/audio.mp3 \
   --output-dir test_temp \
   --segmenter regex \
+  --timeline-provider asr-fuzzy \
   --asr-provider mock \
   --mock-word-timeline tests/fixtures/word_timeline.json
 ```
@@ -44,6 +45,19 @@ test_temp/
 - `forced_alignment.json`
 - `telemetry.json`
 
+使用当前默认真实配置运行 hybrid 的典型命令：
+
+```bash
+uv run funasr-timeline \
+  --manuscript path/to/manuscript.txt \
+  --audio path/to/audio.mp3 \
+  --output-dir path/to/output \
+  --segmenter llm \
+  --llm-config configs/llm-siliconflow.toml \
+  --timeline-provider hybrid \
+  --aligner-config configs/aligner-qwen3.toml
+```
+
 单独分句命令会生成：
 
 - `editable_segments.txt`
@@ -51,7 +65,7 @@ test_temp/
 
 ## 固定真实模型样例
 
-真实 `paraformer-zh` 第一阶段样例已固定在：
+真实 `paraformer-zh` ASR fuzzy 样例已固定在：
 
 ```text
 tests/fixtures/stage1_paraformer/
@@ -77,6 +91,7 @@ uv run funasr-timeline \
   --audio test_temp/real_paraformer_example.mp3 \
   --output-dir test_temp \
   --segmenter regex \
+  --timeline-provider asr-fuzzy \
   --asr-provider paraformer-zh \
   --paraformer-model-dir /Users/sakana/PyEnv/paraformer \
   --paraformer-device mps
@@ -125,7 +140,7 @@ Schema：
 字段说明：
 
 - `audio.path`：音频路径。
-- `audio.format`：音频格式，当前第一阶段要求为 `mp3`。
+- `audio.format`：音频格式，当前完整流程要求为 `mp3`。
 - `audio.duration_ms`：音频或 ASR 时间轴持续时间，未知时为 `null`。
 - `asr.provider`：ASR 服务名，例如 `mock` 或 `paraformer-zh`。
 - `asr.model`：模型名或 fixture 标识。
@@ -220,6 +235,7 @@ uv run funasr-timeline \
   --segments test_temp/editable_segments.txt \
   --audio path/to/audio.mp3 \
   --output-dir test_temp \
+  --timeline-provider asr-fuzzy \
   --asr-provider paraformer-zh
 ```
 
@@ -403,7 +419,7 @@ Schema：
 - 第二句 `第二段有Ｅｎｇｌｉｓｈ 123！` 时间范围为 `600` 到 `2000` 毫秒。
 - 两句 `status` 均为 `ok`，`match_score` 均为 `1.0`。
 
-当前第二阶段已使用顺序窗口 fuzzy 匹配，并要求最终句子时间范围不重叠。若 `raw_start_ms` 早于上一句最终 `end_ms`，会将当前句最终 `start_ms` 修正为上一句最终 `end_ms`，同时将 `time_adjusted` 标记为 `true`。
+当前 ASR fuzzy 分支已使用顺序窗口 fuzzy 匹配，并要求最终句子时间范围不重叠。若 `raw_start_ms` 早于上一句最终 `end_ms`，会将当前句最终 `start_ms` 修正为上一句最终 `end_ms`，同时将 `time_adjusted` 标记为 `true`。
 
 ## `forced_alignment.json`
 
@@ -458,7 +474,7 @@ Schema：
 
 ## `sentence_timeline.srt`
 
-用途：保存由第二阶段句子级时间轴渲染得到的 SRT 字幕文件。该产物通过 `render/srt.py` 中的 `SrtTimelineRenderer` 生成。
+用途：保存由最终句子级时间轴渲染得到的 SRT 字幕文件。该产物通过 `render/srt.py` 中的 `SrtTimelineRenderer` 生成。
 
 格式示例：
 
@@ -553,7 +569,7 @@ Schema：
 - `alignment.opcodes`：全局对齐操作。
 - `alignment.unmatched_manuscript_chars`：稿件中未匹配的归一化字符，包含原稿位置。
 - `alignment.unmapped_asr_tokens`：ASR 中未映射到稿件的字符或 token，包含时间范围。
-- `low_confidence_sentences`：低置信度或无时间句子的完整句子时间轴条目。
+- `low_confidence_sentences`：代码当前收集 `low_confidence`、`no_match`、`empty_after_normalization` 和 `invalid_time_range` 状态的完整句子时间轴条目。
 - `telemetry`：可选 telemetry 摘要，包含双分支 provider、模型、数量和匹配分数，不嵌入完整 units 或 tokens。
 
 当前示例要点：

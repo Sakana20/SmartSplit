@@ -6,10 +6,11 @@
 
 1. 从配音音频中生成字符级或 token 级 ASR 时间轴。
 2. 将 ASR 文本与已有稿件纯文本进行顺序对齐。
-3. 以稿件原文为准，将字符级时间范围合并为句子级时间范围。
-4. 输出丰富的 JSON 中间产物和诊断信息，供后续阶段调参、复核和扩展。
+3. 可选使用 Qwen3 forced aligner 将真实稿件文本直接对齐到 TTS 音频。
+4. 以稿件原文为准，将 ASR fuzzy 或 forced alignment 时间范围合并为句子级时间范围。
+5. 输出丰富的 JSON 中间产物和诊断信息，供后续调参、复核和扩展。
 
-第一阶段重点是跑通 `.txt` 稿件和 `.mp3` 音频的主流程，并为后续多音频格式、音频转换、更多 ASR 服务扩展和字幕导出留下清晰接口。当前真实模型实现为本地 `paraformer-zh`，通过 FunASR `AutoModel` 加载。
+当前重点是跑通 `.txt` 稿件和 `.mp3` 音频的可复核主流程，并为后续多音频格式、音频转换、更多 ASR/forced alignment 服务和字幕导出留下清晰接口。当前真实模型实现包括本地 `paraformer-zh` ASR 和本地 `Qwen3-ForcedAligner-0.6B`。
 
 ## 项目工具
 
@@ -34,13 +35,13 @@ uv run mypy src
 
 实际命令可以在包结构建立后微调，但必须保持文档和项目配置同步。
 
-## 第一阶段范围
+## 当前实现范围
 
-第一阶段实现最小可用但信息丰富的离线流程。
+当前已实现最小可用但信息丰富的离线流程。
 
 ### 实现状态
 
-当前第一阶段已实现：
+当前已实现：
 
 - `pyproject.toml` 驱动的 `uv` 项目结构。
 - `funasr-timeline` 命令行入口。
@@ -58,11 +59,14 @@ uv run mypy src
 - 基于顺序窗口 fuzzy 匹配的句子到 ASR token 匹配。
 - 匹配阶段已加入轻量数字读法兼容，例如稿件 `12元` 可对齐 ASR 的「十二元」。
 - 句子时间使用选中的 ASR 候选窗口完整 token 范围，替换字和数字读法差异不会造成时间轴缺口。
+- 本地 Qwen3 forced aligner 服务，默认模型目录为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`，默认 `device_map = "mps"`、`dtype = "bfloat16"`。
+- `asr-fuzzy`、`qwen3-forced` 和 `hybrid` 三种时间轴策略。
+- 默认配置 `configs/aligner-qwen3.toml` 使用 `hybrid`，最终时间以 Qwen3 forced alignment 为主，ASR fuzzy 分支写入 telemetry。
 - 带无重叠约束的句子级时间合并。
 - SRT 字幕渲染接口和 `sentence_timeline.srt` 输出。
-- 丰富 JSON 中间产物和诊断报告。
+- 丰富 JSON 中间产物和诊断报告，包括 `forced_alignment.json` 和 `telemetry.json`。
 - 单元、集成和端到端测试。
-- 当前测试数量为 24 个，覆盖 mock 流程、CLI 流程、`paraformer-zh` 结果转换逻辑、第二阶段 fuzzy 匹配、时间无重叠修正、SRT 渲染、保护区分句、jieba 短字幕分句、可编辑分句输入和按 ASR 候选窗口落时间轴。
+- 当前 `pytest --collect-only` 收集 40 个测试，覆盖 mock 流程、CLI 流程、`paraformer-zh` 结果转换逻辑、forced alignment 映射、hybrid telemetry、LLM 分句校验、顺序窗口 fuzzy 匹配、时间无重叠修正、SRT 渲染、保护区分句、jieba 短字幕分句、可编辑分句输入和真实 e2e 入口。
 - 已手动验证本地 `paraformer-zh` + `mps` 可完成真实音频推理，并可通过 CLI 生成完整 JSON 输出。
 
 当前完整流程输出文件：
@@ -75,9 +79,14 @@ uv run mypy src
 - `sentence_timeline.srt`
 - `alignment_report.json`
 
+`qwen3-forced` 或 `hybrid` 模式还会输出：
+
+- `forced_alignment.json`
+- `telemetry.json`
+
 示例命令、输出目录、每个输出文件的内容和 schema 见 `docs/output-artifacts.md`。
 
-当前已固定一套真实 `paraformer-zh` 第一阶段结果样例：
+当前已固定一套真实 `paraformer-zh` ASR fuzzy 结果样例：
 
 ```text
 tests/fixtures/stage1_paraformer/
@@ -95,14 +104,14 @@ tests/fixtures/stage1_paraformer/
 - `sentence_timeline.srt`
 - `alignment_report.json`
 
-该样例由本地 `/Users/sakana/PyEnv/paraformer` 模型使用 `mps` 推理生成，并已用当前第二阶段逻辑重新生成下游 JSON，可作为第二阶段匹配逻辑的稳定输入。
+该样例由本地 `/Users/sakana/PyEnv/paraformer` 模型使用 `mps` 推理生成，并已用当前 ASR fuzzy 匹配逻辑重新生成下游 JSON，可作为稳定输入。
 
 ### 已确认输入
 
 - 稿件格式：`.txt` 纯文本。
 - 稿件内容：分段文本，保留段落信息。
-- 音频格式：第一阶段先跑通 `.mp3`。
-- 输出格式：以 JSON 为主，字段尽可能丰富，方便第二阶段分析和调整。
+- 音频格式：当前完整流程要求 `.mp3`。
+- 输出格式：以 JSON 为主，字段尽可能丰富，方便后续分析和调整。
 
 ### 暂不处理内容
 
@@ -117,9 +126,9 @@ tests/fixtures/stage1_paraformer/
 - ASR 服务统一接口：每个真实 ASR 服务都实现同一接口。
 - Forced alignment 服务独立于 ASR 接口：该服务接收音频和真实文本，输出文本单元时间戳，不能伪装成 `AsrService`。
 - 句子切分统一接口：当前内置 `regex`、`jieba-subtitle` 和 `llm`，后续可继续增加实现。
-- 音频输入适配层：第一阶段接收 `.mp3`，后续扩展多格式检测和格式转换。
+- 音频输入适配层：当前接收 `.mp3`，后续扩展多格式检测和格式转换。
 - 渲染输出统一接口：当前已实现 SRT，后续可扩展 VTT、CSV 等格式。
-- 输出 schema 可扩展：保留中间字段和诊断字段，避免第二阶段缺少排查依据。
+- 输出 schema 可扩展：保留中间字段和诊断字段，避免后续分析缺少排查依据。
 
 ## 建议代码结构
 
@@ -131,6 +140,14 @@ src/
       base.py
       paraformer_zh_service.py
       mock_service.py
+    forced_alignment/
+      __init__.py
+      base.py
+      config.py
+      factory.py
+      mock_service.py
+      qwen3_service.py
+      sentence_mapper.py
     segmentation/
       __init__.py
       base.py
@@ -163,7 +180,12 @@ tests/
 
 - `asr/base.py` 定义统一 ASR 接口和标准时间轴数据结构。
 - `asr/paraformer_zh_service.py` 放本地 `paraformer-zh` 模型接入实现。
-- `asr/mock_service.py` 用于测试和第一阶段可重复验证。
+- `asr/mock_service.py` 用于测试和可重复验证。
+- `forced_alignment/base.py` 定义 forced alignment 接口和标准 forced unit 数据结构。
+- `forced_alignment/config.py` 负责读取 aligner TOML 配置。
+- `forced_alignment/qwen3_service.py` 放本地 Qwen3 forced aligner 接入实现。
+- `forced_alignment/mock_service.py` 用于常规测试避免加载真实 Qwen3 模型。
+- `forced_alignment/sentence_mapper.py` 负责把 forced units 映射回稿件分句时间范围。
 - `manuscript.py` 负责 `.txt` 稿件读取和基础元数据。
 - `segmentation/base.py` 定义句子切分接口和标准分句数据结构。
 - `segmentation/factory.py` 负责分句实现注册和创建。
@@ -171,7 +193,7 @@ tests/
 - `segmentation/protection.py`、`segmentation/editable.py`、`segmentation/normalization.py` 放保护段、可编辑分句和归一化范围附加逻辑。
 - `normalization.py` 负责基础归一化。
 - `alignment.py` 负责顺序全局对齐。
-- `sentence_matching.py` 负责第二阶段的顺序窗口 fuzzy 句子匹配。
+- `sentence_matching.py` 负责 ASR fuzzy 的顺序窗口句子匹配。
 - `merge.py` 负责句子级时间合并。
 - `render/base.py` 负责句子时间轴渲染接口，`render/srt.py` 负责 SRT 输出。
 - `report.py` 负责诊断报告生成。
@@ -181,7 +203,7 @@ tests/
 
 ### 1. 输入读取
 
-第一阶段命令行接收显式路径，不依赖固定文件名：
+命令行接收显式路径，不依赖固定文件名：
 
 - `--manuscript path/to/input.txt`
 - `--audio path/to/input.mp3`
@@ -190,7 +212,10 @@ tests/
 - `--llm-config configs/llm-siliconflow.toml`
 - `--segment-only`
 - `--segments path/to/editable_segments.txt`
+- `--timeline-provider asr-fuzzy|qwen3-forced|hybrid`
+- `--aligner-config configs/aligner-qwen3.toml`
 - `--asr-provider mock|paraformer-zh`
+- `--mock-word-timeline tests/fixtures/word_timeline.json`
 - `--paraformer-model-dir /Users/sakana/PyEnv/paraformer`
 - `--paraformer-device mps`
 
@@ -296,7 +321,7 @@ uv run funasr-timeline \
 
 ### 4. 文本归一化
 
-第一阶段只做基础归一化：
+当前只做基础归一化：
 
 - 去除用于对齐的标点。
 - 去除或压缩空白。
@@ -318,7 +343,7 @@ uv run funasr-timeline \
 - 归一化后的稿件全文。
 - 归一化后的 ASR 全文。
 
-第一阶段可使用 Python 标准库 `difflib.SequenceMatcher` 建立可解释的顺序对齐结果。后续如边界精度不足，可替换为自定义动态规划编辑距离对齐或引入 RapidFuzz 辅助诊断。
+当前使用 Python 标准库 `difflib.SequenceMatcher` 建立可解释的顺序对齐结果。后续如边界精度不足，可替换为自定义动态规划编辑距离对齐或引入 RapidFuzz 辅助诊断。
 
 对齐结果应至少包含：
 
@@ -402,13 +427,13 @@ SRT 渲染规则：
 
 字幕导出必须继续以稿件原文作为显示文本。
 
-## 第二阶段实现方案
+## ASR Fuzzy 实现方案
 
-第二阶段已在第一阶段真实 `paraformer-zh` token 级时间轴可用的基础上，改进句子到 token 时间范围的匹配方式。由于当前音频主要由 ground truth 稿件文本生成，不按真实多人对话或大量口语错乱场景设计，方案保持简单、顺序、可解释。
+ASR fuzzy 已在真实 `paraformer-zh` token 级时间轴可用的基础上，改进句子到 token 时间范围的匹配方式。由于当前音频主要由 ground truth 稿件文本生成，不按真实多人对话或大量口语错乱场景设计，方案保持简单、顺序、可解释。
 
-## Qwen3 Forced Aligner 下一阶段方案
+## Qwen3 Forced Aligner 当前实现
 
-下一阶段计划接入 `Qwen3-ForcedAligner-0.6B`，用于将真实稿件文本直接强制对齐到 TTS 音频时间窗。详细方案见 `docs/forced-aligner-plan.md`。
+当前已接入 `Qwen3-ForcedAligner-0.6B`，用于将真实稿件文本直接强制对齐到 TTS 音频时间窗。详细设计和 MPS 可行性结论见 `docs/forced-aligner-plan.md`。
 
 已完成本地可行性验证：
 
@@ -427,11 +452,11 @@ SRT 渲染规则：
 - CLI 应读取 aligner 配置文件，并根据 `timeline-provider` 选择 `asr-fuzzy`、`qwen3-forced` 或 `hybrid`。
 - 输出应新增 `forced_alignment.json` 和 `telemetry.json`，并在 `alignment_report.json` 中保留 telemetry 摘要。
 
-### 第二阶段边界
+### 当前时间轴边界
 
-第二阶段继续遵守以下约束：
+当前实现继续遵守以下约束：
 
-- 分句仍采用简单的“段落 + 标点符号 regex”方案。
+- 分句通过统一接口选择，当前可用 `regex`、`jieba-subtitle` 和 `llm`；CLI 默认值为 `regex`。
 - 最终句子文本仍以 ground truth 稿件原文为准。
 - 不处理领域词、同义词等复杂归一化。数字读法目前只做轻量匹配兼容，不作为完整归一化能力。
 - 不引入全局动态规划或复杂搜索，除非后续 fixture 证明确有必要。
@@ -439,14 +464,14 @@ SRT 渲染规则：
 
 ### 分句方案
 
-分句继续通过 `segmentation/base.py` 的可替换接口实现，第二阶段先不扩展复杂规则。
+分句继续通过 `segmentation/base.py` 的可替换接口实现。
 
 默认规则：
 
 - 按段落边界切分并保留 `paragraph_index`。
 - 段落内部按强标点切分。
 - 强边界包括 `。`、`！`、`？`、`!`、`?`、`；`、`;`。
-- 标点保留在句子原文中。
+- `regex` 输出保留强边界标点；`jieba-subtitle` 输出短字幕风格文本，不保留边界标点；`llm` 原始输出保留标点用于校验，最终分句再去掉首尾边界标点。
 - 不按逗号切分。
 - 空段落不产出句子。
 
@@ -468,7 +493,7 @@ SRT 渲染规则：
 
 ### 顺序窗口 fuzzy 匹配
 
-第二阶段新增 `sentence_matching.py`，用于把每个稿件句子按顺序匹配到 ASR token 时间轴上。匹配不在整条 ASR 文本中自由搜索，而是从上一句结束 token 之后开始，保证整体顺序单调。
+`sentence_matching.py` 用于把每个稿件句子按顺序匹配到 ASR token 时间轴上。匹配不在整条 ASR 文本中自由搜索，而是从上一句结束 token 之后开始，保证整体顺序单调。
 
 单句匹配步骤：
 
@@ -505,7 +530,7 @@ SRT 渲染规则：
 
 ### 时间合并与无重叠约束
 
-`merge.py` 在第二阶段根据 `sentence_matching.py` 的匹配结果合并时间，而不是只依赖全文 alignment 中的字符范围映射。时间合并使用选中 ASR 候选窗口的完整 token 范围；字符级完全匹配 token 仅作为 diagnostics 保留。
+`merge.py` 根据 `sentence_matching.py` 的匹配结果合并 ASR fuzzy 时间，而不是只依赖全文 alignment 中的字符范围映射。时间合并使用选中 ASR 候选窗口的完整 token 范围；字符级完全匹配 token 仅作为 diagnostics 保留。
 
 原始时间计算：
 
@@ -521,7 +546,7 @@ SRT 渲染规则：
 4. 若相邻句之间存在自然空隙，保留空隙，不强行拉齐。
 5. 正常情况下只调整当前句，不回写上一句时间。
 
-第二阶段 `sentence_timeline.json` 已新增字段：
+当前 `sentence_timeline.json` 已包含字段：
 
 ```json
 {
@@ -545,16 +570,16 @@ SRT 渲染规则：
 
 `time_adjusted` 作为独立布尔字段，不覆盖 `status`，因为一句话可以同时是 `ok` 且经过无重叠时间修正。
 
-### 第二阶段测试
+### ASR Fuzzy 测试
 
-第二阶段实现需要补充以下测试：
+当前测试覆盖以下 ASR fuzzy 行为：
 
 - regex 分句在段落和强标点上的稳定行为。
 - 正常多句稿件能按顺序匹配到 token timeline。
 - ASR 开头存在额外 token 时，第一句仍能从正确内容开始取时间。
 - ASR 局部少字或错字时，句子保留低置信度诊断。
 - 相邻句子的原始匹配时间存在重叠时，最终 `start_ms` 和 `end_ms` 不重叠。
-- 使用 `tests/fixtures/stage1_paraformer/` 作为真实第一阶段样例，验证第二阶段输入输出路径稳定。
+- 使用 `tests/fixtures/stage1_paraformer/` 作为真实 ASR fuzzy 样例，验证输入输出路径稳定。
 
 ## 测试计划
 
@@ -575,7 +600,7 @@ SRT 渲染规则：
 - 字符 offset 到 token index 映射。
 - 句子时间合并。
 - 匹配分数计算。
-- 第二阶段顺序窗口 fuzzy 匹配。
+- ASR fuzzy 顺序窗口匹配。
 - 句子时间无重叠修正。
 - SRT 时间戳格式化和字幕渲染。
 
@@ -588,7 +613,7 @@ SRT 渲染规则：
 - 替换、漏字、额外口头词等情况下的诊断。
 - `sentence_timeline.json` 生成。
 - `alignment_report.json` 生成。
-- 基于 `tests/fixtures/stage1_paraformer/` 的第二阶段匹配输入样例。
+- 基于 `tests/fixtures/stage1_paraformer/` 的 ASR fuzzy 匹配输入样例。
 
 常规集成测试不加载真实 `paraformer-zh` 模型，避免依赖本地模型目录和长时间推理。
 
@@ -602,6 +627,12 @@ SRT 渲染规则：
 - 真实 demo 测试：复用剪映 demo 的长中文混合文本，调用剪映 TTS 生成音频，使用 LLM 分句，通过 `hybrid` 同时运行 Qwen3 forced aligner 和本地 `paraformer-zh`/FunASR ASR，并写出 `e2e_diagnostics.json`，用于检查句子数量、状态分布、telemetry 差异、TTS/音频转换/剪映草稿信息和报告摘要。
 
 真实 demo 测试位于 `tests/e2e/test_jianying_smartsplit_demo.py`，默认会随 pytest 执行。运行前需要准备 `configs/llm-siliconflow.toml`、`configs/aligner-qwen3.toml`、可 import 的剪映 Python 接口、TTS 后端、本地模型和 `FUNASR_TIMELINE_LLM_API_KEY`。
+
+只运行常规确定性测试时，可使用：
+
+```bash
+uv run pytest -m 'not e2e_real'
+```
 
 ## 质量门禁
 
@@ -634,26 +665,29 @@ SRT 渲染规则：
 ## 已确认决策
 
 - 稿件使用 `.txt` 纯文本，内容为分段文本。
-- 第一阶段先跑通 `.mp3` 音频。
+- 当前先支持 `.mp3` 音频。
 - 后续需要支持 `.wav`、`.ogg` 等常见格式，或通过转换统一输入格式。
 - 句子切分保留接口，当前内置 `regex`、`jieba-subtitle` 和 `llm`。
-- 第一阶段 JSON 输出要尽可能丰富，服务于第二阶段分析调整。
+- JSON 输出要尽可能丰富，服务于后续分析调整。
 - 完整数字归一化、领域词、同义词等暂不处理；当前仅保留轻量数字读法匹配兼容。
 - 真实 ASR 模型通过统一接口接入；当前已实现本地 `paraformer-zh` 服务，内部使用 FunASR `AutoModel`。
+- Forced alignment 通过独立接口接入；当前已实现本地 `qwen3-forced` 和测试用 `mock`。
 - 本地 `paraformer-zh` 模型目录为 `/Users/sakana/PyEnv/paraformer`。
+- 本地 Qwen3 forced aligner 模型目录为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`。
 - macOS 上默认使用 `mps` 推理。
 - 最终句子文本默认使用原始稿件。
-- 第二阶段分句继续使用简单段落和强标点 regex。
-- 第二阶段句子到 token 的匹配采用顺序窗口 fuzzy 匹配。
-- 第二阶段最终句子时间范围必须保证相邻句子不重叠。
-- 第二阶段句子时间使用选中 ASR 候选窗口的完整 token 范围，字符级完全匹配结果只作为诊断字段保留。
+- CLI `--segmenter` 默认值为 `regex`；短视频字幕可显式使用 `jieba-subtitle` 或 `llm`。
+- 默认 aligner 配置为 `hybrid`，主时间来源为 `qwen3-forced`，ASR fuzzy 结果保留到 diagnostics 和 telemetry。
+- ASR fuzzy 句子到 token 的匹配采用顺序窗口 fuzzy 匹配。
+- 最终句子时间范围必须保证相邻句子不重叠。
+- ASR fuzzy 句子时间使用选中 ASR 候选窗口的完整 token 范围，字符级完全匹配结果只作为诊断字段保留。
 - 当前已通过 render 接口输出 `sentence_timeline.srt`。
 
 ## 待后续确认
 
 - `.mp3` 解码依赖和本地环境要求。
 - 多音频格式转换使用 `ffmpeg` 还是其他库。
-- 低置信度阈值的默认值。
-- 输出目录中各中间文件的最终命名规范。
+- 低置信度阈值是否需要暴露到 CLI 或配置文件。
 - 是否将真实 `paraformer-zh` 推理纳入可选慢速测试。
 - 是否增加 `.vtt` 或 `.csv`。
+- hybrid 后续是否根据 telemetry 做自动仲裁或兜底。

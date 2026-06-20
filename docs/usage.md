@@ -138,6 +138,7 @@ uv run funasr-timeline \
   --audio path/to/audio.mp3 \
   --output-dir path/to/output \
   --segmenter jieba-subtitle \
+  --timeline-provider asr-fuzzy \
   --asr-provider paraformer-zh \
   --paraformer-model-dir /Users/sakana/PyEnv/paraformer \
   --paraformer-device mps
@@ -163,6 +164,7 @@ uv run funasr-timeline \
   --audio tests/fixtures/audio.mp3 \
   --output-dir test_temp \
   --segmenter regex \
+  --timeline-provider asr-fuzzy \
   --asr-provider mock \
   --mock-word-timeline tests/fixtures/word_timeline.json
 ```
@@ -209,6 +211,7 @@ uv run funasr-timeline \
   --segments path/to/editable_segments.txt \
   --audio path/to/audio.mp3 \
   --output-dir path/to/output \
+  --timeline-provider asr-fuzzy \
   --asr-provider paraformer-zh \
   --paraformer-model-dir /Users/sakana/PyEnv/paraformer \
   --paraformer-device mps
@@ -250,13 +253,15 @@ CLI 默认启用 debug 日志，便于检查稿件读取、ASR、分句、归一
 ```toml
 [llm]
 base_url = "https://api.siliconflow.cn/v1"
-model = "Qwen/Qwen3.5-9B"
+model = "Qwen/Qwen3.5-4B"
 api_key_env = "FUNASR_TIMELINE_LLM_API_KEY"
 timeout_seconds = 240
 temperature = 0
 max_tokens = 8192
 enable_thinking = false
 ```
+
+如果需要切换模型，只修改配置文件即可，CLI 仍通过 `--llm-config` 读取。
 
 本地使用时通过环境变量提供密钥：
 
@@ -492,11 +497,17 @@ uv run pytest tests/e2e/test_jianying_smartsplit_demo.py -q
 
 - `configs/llm-siliconflow.toml` 直接作为默认 LLM 配置使用，密钥仍通过 `FUNASR_TIMELINE_LLM_API_KEY` 提供。
 - `configs/aligner-qwen3.toml` 的模型路径已经按当前本机约定填写为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B` 和 `/Users/sakana/PyEnv/paraformer`。真实测试前请确认路径、`device_map = "mps"`、`dtype = "bfloat16"` 与当前环境一致。
-- `configs/jianying-e2e.env` 保存 demo e2e 的环境变量示例，不保存密钥；真实值应通过本地 shell 环境加载。
+- `configs/jianying-e2e.env` 保存当前本机 demo e2e 的可直接运行环境变量，包括 LLM key 环境变量赋值。该文件适合本地验证；共享仓库或提交到公开环境前应移除或替换敏感值。
 
 当前状态：
 
 ```text
 uv run pytest
 # 默认会运行真实 demo e2e，需要本地模型、TTS、剪映 Python 接口和 LLM API key。
+```
+
+只运行常规确定性测试时可排除真实端到端测试：
+
+```bash
+uv run pytest -m 'not e2e_real'
 ```

@@ -9,7 +9,7 @@
 3. 将字符级时间范围合并为句子级时间范围。
 4. 输出丰富的 JSON 结果和诊断报告，便于人工复核和后续阶段优化。
 
-第一阶段先聚焦 `.txt` 稿件和 `.mp3` 音频，并已接入本地 `paraformer-zh` 服务。该服务内部使用 FunASR `AutoModel`。后续再扩展 `.wav`、`.ogg` 等常见音频格式或统一音频转换能力。
+当前先聚焦 `.txt` 稿件和 `.mp3` 音频，并已接入本地 `paraformer-zh` ASR 服务和本地 Qwen3 forced aligner。`paraformer-zh` 内部使用 FunASR `AutoModel`；Qwen3 forced aligner 通过 `qwen_asr.Qwen3ForcedAligner` 接入。后续再扩展 `.wav`、`.ogg` 等常见音频格式或统一音频转换能力。
 
 ## FunASR 时间戳能力
 
@@ -70,7 +70,7 @@ FunASR 的 Paraformer 示例通常会在结果对象中暴露 timestamp 信息�
 - 当少量连续英文或数字片段被 FunASR 合并到单个 timestamp 时，将对应片段合并为多字符 ASR token；下游对齐仍会展开 token 文本。
 - 标准输出中 `provider` 和 token `source` 均使用 `paraformer-zh`。
 
-当前已将一套真实模型推理结果固定到 `tests/fixtures/stage1_paraformer/`。该 fixture 包含 `.mp3` 输入、匹配稿件、当前 6 个 JSON 输出和 `sentence_timeline.srt`，可作为第二阶段匹配逻辑和渲染逻辑的稳定输入。
+当前已将一套真实 `paraformer-zh` 推理结果固定到 `tests/fixtures/stage1_paraformer/`。该 fixture 包含 `.mp3` 输入、匹配稿件、ASR fuzzy 输出 JSON 和 `sentence_timeline.srt`，可作为 ASR fuzzy 匹配逻辑和渲染逻辑的稳定输入。
 
 ## 音频格式策略
 
@@ -78,7 +78,7 @@ FunASR 的 Paraformer 示例通常会在结果对象中暴露 timestamp 信息�
 
 阶段策略：
 
-- 第一阶段：先跑通 `.mp3`。
+- 当前实现：完整流程要求 `.mp3`。
 - 后续阶段：增加格式检测和音频转换能力。
 - 转换方案待确认，候选方向包括 `ffmpeg` 命令行或 Python 音频库封装。
 
@@ -97,27 +97,29 @@ FunASR 的 Paraformer 示例通常会在结果对象中暴露 timestamp 信息�
 
 当前仍不做完整数字归一化、领域词和同义词处理。基础归一化后会执行顺序全局对齐；句子级 fuzzy 匹配阶段额外提供轻量数字读法兼容，例如稿件 `12元` 可与 ASR 的「十二元」对齐。该兼容只用于选择 ASR 时间窗口，不改变最终字幕文本。
 
-第二阶段基于当前业务前提进行收敛：音频主要由 ground truth 稿件文本生成，因此不优先处理真实对话中的大量口头插入、乱序、多人说话或长距离误配问题。第二阶段重点是让每个 ground truth 分句以可解释的 fuzzy 方式匹配到第一阶段 token 级 timeline，并保证最终句子时间范围不重叠。当前该流程已通过 `sentence_matching.py` 和 `merge.py` 实现。
+当前实现基于业务前提进行收敛：音频主要由 ground truth 稿件文本生成，因此不优先处理真实对话中的大量口头插入、乱序、多人说话或长距离误配问题。ASR fuzzy 分支让每个 ground truth 分句以可解释的 fuzzy 方式匹配到 ASR token timeline，并保证最终句子时间范围不重叠；该流程已通过 `sentence_matching.py` 和 `merge.py` 实现。Qwen3 forced 分支直接对分句后的完整稿件文本和 TTS 音频做强制对齐，再按归一化 offset 回填每个分句。默认 `hybrid` 流程同时运行两条分支，最终时间以 Qwen3 forced alignment 为主，ASR fuzzy 作为 diagnostics/telemetry 保留。
 
 推荐流程：
 
 1. 读取 `.txt` 稿件并保留段落信息。
 2. 使用可替换的句子切分接口切分稿件，或读取人工编辑后的分句文本。
-3. 使用 `regex` 或 `jieba-subtitle` 作为当前分句实现。
-4. 对稿件文本和 ASR 文本进行基础归一化。
+3. 使用 `regex`、`jieba-subtitle` 或 `llm` 作为当前分句实现。
+4. 对稿件文本、ASR 文本和 forced aligner 输出进行基础归一化。
 5. 在归一化后的全文级别做顺序全局对齐。
-6. 将每个稿件句子按顺序窗口 fuzzy 匹配到 ASR token 时间范围。
-7. 使用选中 ASR 候选窗口完整 token 范围合并时间，并修正相邻句子的重叠范围。
-8. 对低置信度、漏配和额外 ASR 内容生成诊断报告。
+6. ASR fuzzy 分支将每个稿件句子按顺序窗口 fuzzy 匹配到 ASR token 时间范围。
+7. Qwen3 forced 分支将 forced units 按归一化 offset 映射到分句范围。
+8. 使用所选时间轴策略生成最终句子时间，并修正相邻句子的重叠范围。
+9. 对低置信度、漏配、额外 ASR 内容和双分支时间差异生成诊断报告。
 
-第一阶段的全文顺序对齐用于建立基础可检查结果。第二阶段已在句子层增加顺序窗口 fuzzy 匹配：每个句子只从上一句结束 token 之后向后搜索有限窗口，不做全局自由搜索，也不默认引入动态规划。最终时间使用选中候选窗口的完整 token 范围，字符级完全匹配 token 只作为诊断字段保留。这样可以利用 ground truth 音频的顺序稳定性，同时容忍 ASR 局部漏字、错字、数字读法差异或额外 token。
+全文顺序对齐用于建立基础可检查结果。ASR fuzzy 分支已在句子层增加顺序窗口 fuzzy 匹配：每个句子只从上一句结束 token 之后向后搜索有限窗口，不做全局自由搜索，也不默认引入动态规划。ASR fuzzy 时间使用选中候选窗口的完整 token 范围，字符级完全匹配 token 只作为诊断字段保留。这样可以利用 ground truth 音频的顺序稳定性，同时容忍 ASR 局部漏字、错字、数字读法差异或额外 token。
 
 ## 句子切分策略
 
-句子切分通过统一接口实现，当前内置两个实现：
+句子切分通过统一接口实现，当前内置三个实现：
 
 - `regex`：按段落和强标点切分，适合保留自然句。
 - `jieba-subtitle`：先按段落和强标点形成基础范围，再使用 jieba 分词拼接短句，适合短视频字幕场景。
+- `llm`：通过 OpenAI-compatible Chat Completions 做短视频口播风格分句，输出纯文本换行，不使用 XML/JSON。
 
 共同的强边界包括：
 
@@ -128,6 +130,8 @@ FunASR 的 Paraformer 示例通常会在结果对象中暴露 timestamp 信息�
 - 段落换行
 
 `jieba-subtitle` 会把逗号、顿号、句号、问号、感叹号、分号等标点作为短语边界，但最终分句文本不保留标点。默认目标是单句归一化文本不超过 10 个字符，但不会把同一个 jieba 词切到两个分句里。如果某个词本身超过目标长度，则保留该词完整性，允许该分句超过目标长度。当前实现还内置少量短视频字幕常见软切分点，例如 `特别`、`直接`，用于得到更自然的语义短语。
+
+`llm` 分句会要求模型只在原文中插入换行，必须保留标点用于完整性校验。每个 block 内输出行直接拼接后必须与原文完全一致。校验通过后，程序再从原稿切片并去掉分句两端边界标点。当前 prompt 和本地校验要求常规分句优先 4 到 12 个中文字符，硬上限为 14 个中文字符；英文、数字和标点不计入长度，超长会触发 LLM 反馈重试。
 
 稿件中可以使用成对保护标记跳过自动分句：
 
@@ -141,7 +145,7 @@ FunASR 的 Paraformer 示例通常会在结果对象中暴露 timestamp 信息�
 
 ## 文本归一化策略
 
-第一阶段归一化范围：
+当前归一化范围：
 
 - 去除用于对齐的标点。
 - 压缩或移除空白。
@@ -161,14 +165,14 @@ FunASR 的 Paraformer 示例通常会在结果对象中暴露 timestamp 信息�
 
 成熟 Python 选项：
 
-- `difflib.SequenceMatcher`：Python 标准库，适合第一阶段建立顺序匹配和可解释诊断。
+- `difflib.SequenceMatcher`：Python 标准库，适合建立顺序匹配和可解释诊断。
 - `RapidFuzz`：高性能模糊匹配库，可用于后续补充局部评分、相似度诊断和边界优化。
 
-第一阶段优先使用标准库方案，降低依赖和实现复杂度。第二阶段仍建议先使用 `difflib.SequenceMatcher` 对候选窗口评分，避免过早增加依赖。后续如果发现边界精度不足，再引入 RapidFuzz 或自定义动态规划对齐。
+当前优先使用标准库方案，降低依赖和实现复杂度。ASR fuzzy 分支使用 `difflib.SequenceMatcher` 对候选窗口评分。后续如果发现边界精度不足，再引入 RapidFuzz 或自定义动态规划对齐。
 
-## 第二阶段匹配与时间合并策略
+## ASR Fuzzy 匹配与时间合并策略
 
-第二阶段已新增独立的句子匹配模块，用于将 `SentenceSegment` 顺序匹配到 ASR token timeline。
+当前已新增独立的句子匹配模块，用于将 `SentenceSegment` 顺序匹配到 ASR token timeline。
 
 单句匹配流程：
 
@@ -215,7 +219,7 @@ FunASR 的 Paraformer 示例通常会在结果对象中暴露 timestamp 信息�
 - Montreal Forced Aligner：音素和词级强制对齐能力强，但安装和声学、发音资源要求较重。
 - WhisperX：可通过 VAD 和强制对齐生成词级时间戳，但中文对齐通常需要额外模型支持，流程也更复杂。
 
-这些工具可作为后续备选方案；当前主路径仍是统一 ASR 接口下的本地 `paraformer-zh` 服务。
+这些工具可作为后续备选方案；当前主路径是本地 Qwen3 forced aligner 与统一 ASR 接口下本地 `paraformer-zh` 服务组成的 `hybrid` 流程。
 
 参考：
 
