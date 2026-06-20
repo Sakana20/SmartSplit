@@ -419,6 +419,9 @@ SRT 渲染规则：
 - 时间格式为 `HH:MM:SS,mmm`。
 - 缺失 `start_ms` 或 `end_ms` 的句子不会渲染为字幕块。
 - 渲染顺序与 `sentence_timeline.json` 中的句子顺序一致。
+- 默认将最后一条有效字幕的结束时间对齐到字幕对齐音频的实际结束时间，并向上取整到 30fps 帧边界。CLI 通过 `--subtitle-alignment-audio` 接收该音频，未指定时使用 `--audio`，并可通过 `--no-align-last-subtitle-to-audio-end` 关闭。
+- 末条结束时间修正仅存在于 SRT renderer 输出，不回写 `SentenceTimelineItem`，也不改变 `sentence_timeline.json`、匹配或诊断结果。
+- 如果 TTS 音频为适配 ASR 而转换格式，字幕对齐使用转换前的原始 TTS 音频，避免编码或容器时长差异影响末条字幕。
 
 后续可继续增加：
 

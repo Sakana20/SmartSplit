@@ -42,6 +42,7 @@ def run_pipeline(
     forced_alignment_service: ForcedAlignmentService | None = None,
     forced_alignment_language: str = "Chinese",
     telemetry_config: TelemetryConfig | None = None,
+    subtitle_alignment_audio: Path | None = None,
 ) -> dict[str, Path]:
     logger.debug(
         "开始完整流程：manuscript={} audio={} output_dir={}",
@@ -126,7 +127,7 @@ def run_pipeline(
             sum(1 for item in sentence_items if item.status == "low_confidence"),
             sum(1 for item in sentence_items if item.status == "no_match"),
         )
-    srt_renderer = SrtTimelineRenderer()
+    srt_renderer = SrtTimelineRenderer(subtitle_alignment_audio=subtitle_alignment_audio)
     telemetry = _build_telemetry(
         timeline_provider=timeline_provider,
         primary="qwen3-forced" if timeline_provider in {"qwen3-forced", "hybrid"} else "asr-fuzzy",

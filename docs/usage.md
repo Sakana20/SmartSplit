@@ -229,6 +229,8 @@ uv run funasr-timeline \
 | --- | --- | --- | --- |
 | `--manuscript` | 是 | 无 | `.txt` 稿件路径。 |
 | `--audio` | 完整流程必填 | 无 | `.mp3` 音频路径。`--segment-only` 时不需要。 |
+| `--subtitle-alignment-audio` | 否 | `--audio` | 渲染 SRT 时用于将最后一条有效字幕的结束时间对齐到音频结尾。TTS 音频经过格式转换时，应传入转换前的原始音频。 |
+| `--no-align-last-subtitle-to-audio-end` | 否 | `false` | 关闭末条字幕结束时间到音频结尾的对齐。 |
 | `--output-dir` | 是 | 无 | 输出目录。不存在会自动创建。 |
 | `--segmenter` | 否 | `regex` | 分句实现，可选 `regex`、`jieba-subtitle`、`llm`。 |
 | `--llm-config` | `--segmenter llm` 时读取 | `configs/llm-siliconflow.toml` | OpenAI-compatible LLM 分句配置文件。 |
@@ -243,6 +245,18 @@ uv run funasr-timeline \
 | `--quiet` | 否 | `false` | 关闭默认 debug 日志，仅保留命令行错误输出。 |
 
 CLI 默认启用 debug 日志，便于检查稿件读取、ASR、分句、归一化、匹配、合并和文件写入等阶段。命令结束时会用 Rich 表格展示输出路径；该表格只影响终端显示，不会改变 JSON、SRT 或其他产物内容。
+
+如果 ASR 使用由 TTS 原始音频转换得到的 MP3，建议显式传入原始音频：
+
+```bash
+uv run funasr-timeline \
+  --manuscript path/to/manuscript.txt \
+  --audio path/to/converted.mp3 \
+  --subtitle-alignment-audio path/to/original.ogg \
+  --output-dir path/to/output
+```
+
+该对齐只在最终 SRT 渲染时生效，音频结束时间会向上取整到 30fps 帧边界。`sentence_timeline.json`、匹配结果、诊断字段和主流程时间轴均保留原值。
 
 ## LLM 分句配置
 

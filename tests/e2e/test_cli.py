@@ -23,6 +23,7 @@ def test_cli_generates_expected_files(tmp_path: Path) -> None:
             str(fixture_dir / "word_timeline.json"),
             "--timeline-provider",
             "asr-fuzzy",
+            "--no-align-last-subtitle-to-audio-end",
         ]
     )
 
@@ -53,6 +54,7 @@ def test_cli_can_run_hybrid_with_mock_forced_aligner(tmp_path: Path) -> None:
             str(fixture_dir / "forced_alignment" / "config.toml"),
             "--mock-word-timeline",
             str(fixture_dir / "word_timeline.json"),
+            "--no-align-last-subtitle-to-audio-end",
         ]
     )
 

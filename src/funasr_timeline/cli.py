@@ -23,6 +23,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="生成以稿件为准的句子级音频时间轴。")
     parser.add_argument("--manuscript", required=True, type=Path, help=".txt 稿件路径")
     parser.add_argument("--audio", type=Path, help=".mp3 音频路径")
+    parser.add_argument(
+        "--subtitle-alignment-audio",
+        type=Path,
+        help="用于将最后一条字幕结束时间对齐到音频结尾；默认使用 --audio。",
+    )
+    parser.add_argument(
+        "--no-align-last-subtitle-to-audio-end",
+        action="store_true",
+        help="关闭最后一条字幕结束时间到音频结尾的对齐。",
+    )
     parser.add_argument("--output-dir", required=True, type=Path, help="输出目录")
     parser.add_argument(
         "--segment-only",
@@ -143,6 +153,11 @@ def main(argv: list[str] | None = None) -> int:
         forced_alignment_service=forced_alignment_service,
         forced_alignment_language=aligner_config.qwen3_forced.language,
         telemetry_config=aligner_config.telemetry,
+        subtitle_alignment_audio=(
+            None
+            if args.no_align_last_subtitle_to_audio_end
+            else args.subtitle_alignment_audio or args.audio
+        ),
     )
     print_output_paths(paths)
     return 0

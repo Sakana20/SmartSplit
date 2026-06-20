@@ -93,6 +93,8 @@ def test_jianying_demo_llm_qwen3_funasr_writes_detailed_diagnostics(
         str(paths["manuscript"]),
         "--audio",
         str(asr_audio_path),
+        "--subtitle-alignment-audio",
+        str(audio_path),
         "--output-dir",
         str(paths["timeline_dir"]),
         "--segmenter",
