@@ -21,13 +21,22 @@ def test_srt_renderer_uses_sentence_text_and_skips_missing_times() -> None:
 
     assert rendered == (
         "1\n"
-        "00:00:00,100 --> 00:00:02,500\n"
+        "00:00:00,000 --> 00:00:02,500\n"
         "第一句话。\n"
         "\n"
         "2\n"
         "00:00:02,600 --> 00:00:04,000\n"
         "第二句话。\n"
     )
+    assert items[0].start_ms == 100
+
+
+def test_srt_renderer_can_keep_first_cue_speech_start() -> None:
+    items = [_item(index=0, text="第一句话。", start_ms=100, end_ms=2500)]
+
+    rendered = SrtTimelineRenderer(align_first_subtitle_to_audio_start=False).render(items)
+
+    assert "00:00:00,100 --> 00:00:02,500" in rendered
 
 
 def test_srt_renderer_aligns_only_last_rendered_cue_to_audio_end(tmp_path: Path) -> None:
@@ -43,7 +52,10 @@ def test_srt_renderer_aligns_only_last_rendered_cue_to_audio_end(tmp_path: Path)
         _item(index=2, text="最后一句。", start_ms=1200, end_ms=3000),
     ]
 
-    rendered = SrtTimelineRenderer(subtitle_alignment_audio=audio_path).render(items)
+    rendered = SrtTimelineRenderer(
+        subtitle_alignment_audio=audio_path,
+        align_first_subtitle_to_audio_start=False,
+    ).render(items)
 
     assert audio_duration_ms(audio_path) == 4533
     assert "00:00:00,100 --> 00:00:01,000" in rendered

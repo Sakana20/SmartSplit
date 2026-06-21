@@ -43,7 +43,7 @@ def test_pipeline_writes_rich_outputs(tmp_path: Path) -> None:
     assert sentence_timeline[1]["end_ms"] == 2000
 
     srt = paths["sentence_timeline_srt"].read_text(encoding="utf-8")
-    assert "00:00:00,100 --> 00:00:00,500" in srt
+    assert "00:00:00,000 --> 00:00:00,500" in srt
     assert "第一句话。" in srt
 
     report = json.loads(paths["alignment_report"].read_text(encoding="utf-8"))

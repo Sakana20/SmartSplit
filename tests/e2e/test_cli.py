@@ -35,6 +35,8 @@ def test_cli_generates_expected_files(tmp_path: Path) -> None:
     sentence_timeline = json.loads(sentence_timeline_path.read_text(encoding="utf-8"))
     assert len(sentence_timeline) == 2
     assert sentence_timeline[0]["status"] == "ok"
+    assert sentence_timeline[0]["start_ms"] == 100
+    assert "00:00:00,000 -->" in (tmp_path / "sentence_timeline.srt").read_text(encoding="utf-8")
 
 
 def test_cli_can_run_hybrid_with_mock_forced_aligner(tmp_path: Path) -> None:
@@ -55,6 +57,7 @@ def test_cli_can_run_hybrid_with_mock_forced_aligner(tmp_path: Path) -> None:
             "--mock-word-timeline",
             str(fixture_dir / "word_timeline.json"),
             "--no-align-last-subtitle-to-audio-end",
+            "--no-align-first-subtitle-to-audio-start",
         ]
     )
 
@@ -63,6 +66,7 @@ def test_cli_can_run_hybrid_with_mock_forced_aligner(tmp_path: Path) -> None:
         (tmp_path / "sentence_timeline.json").read_text(encoding="utf-8")
     )
     assert sentence_timeline[0]["start_ms"] == 120
+    assert "00:00:00,120 -->" in (tmp_path / "sentence_timeline.srt").read_text(encoding="utf-8")
     assert (tmp_path / "forced_alignment.json").exists()
     assert (tmp_path / "telemetry.json").exists()
 

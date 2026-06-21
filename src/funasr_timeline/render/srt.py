@@ -15,8 +15,14 @@ class SrtTimelineRenderer(TimelineRenderer):
     name = "srt"
     file_extension = ".srt"
 
-    def __init__(self, subtitle_alignment_audio: Path | None = None) -> None:
+    def __init__(
+        self,
+        subtitle_alignment_audio: Path | None = None,
+        *,
+        align_first_subtitle_to_audio_start: bool = True,
+    ) -> None:
         self.subtitle_alignment_audio = subtitle_alignment_audio
+        self.align_first_subtitle_to_audio_start = align_first_subtitle_to_audio_start
 
     def render(self, items: list[SentenceTimelineItem]) -> str:
         renderable_items = [
@@ -49,6 +55,11 @@ class SrtTimelineRenderer(TimelineRenderer):
         for cue_index, item in enumerate(renderable_items, start=1):
             assert item.start_ms is not None
             assert item.end_ms is not None
+            start_ms = (
+                0
+                if item is renderable_items[0] and self.align_first_subtitle_to_audio_start
+                else item.start_ms
+            )
             end_ms = (
                 aligned_end_ms if item is last_item and aligned_end_ms is not None else item.end_ms
             )
@@ -57,7 +68,7 @@ class SrtTimelineRenderer(TimelineRenderer):
                 "\n".join(
                     [
                         str(cue_index),
-                        f"{format_srt_timestamp(item.start_ms)} --> {format_srt_timestamp(end_ms)}",
+                        f"{format_srt_timestamp(start_ms)} --> {format_srt_timestamp(end_ms)}",
                         item.text,
                     ]
                 )

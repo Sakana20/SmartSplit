@@ -33,6 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="关闭最后一条字幕结束时间到音频结尾的对齐。",
     )
+    parser.add_argument(
+        "--no-align-first-subtitle-to-audio-start",
+        action="store_true",
+        help="关闭第一条字幕开始时间到音频起点 00:00:00,000 的对齐。",
+    )
     parser.add_argument("--output-dir", required=True, type=Path, help="输出目录")
     parser.add_argument(
         "--segment-only",
@@ -158,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.no_align_last_subtitle_to_audio_end
             else args.subtitle_alignment_audio or args.audio
         ),
+        align_first_subtitle_to_audio_start=(not args.no_align_first_subtitle_to_audio_start),
     )
     print_output_paths(paths)
     return 0
