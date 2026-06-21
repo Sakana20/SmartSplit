@@ -14,9 +14,7 @@ from funasr_timeline.forced_alignment.base import (
 )
 from funasr_timeline.normalization import normalize_text
 
-DEFAULT_QWEN3_FORCED_ALIGNER_MODEL_DIR = Path(
-    "/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B"
-)
+DEFAULT_QWEN3_FORCED_ALIGNER_MODEL_DIR = Path("/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B")
 
 
 class Qwen3ForcedAlignmentService(ForcedAlignmentService):
@@ -70,16 +68,10 @@ class Qwen3ForcedAlignmentService(ForcedAlignmentService):
             len(raw_units),
         )
 
-        units = [
-            _convert_unit(item, index)
-            for index, item in enumerate(raw_units)
-        ]
+        units = [_convert_unit(item, index) for index, item in enumerate(raw_units)]
 
         normalized_text = normalize_text(text).text
-        forced_normalized_text = "".join(
-            unit.normalized_text
-            for unit in units
-        )
+        forced_normalized_text = "".join(unit.normalized_text for unit in units)
 
         duration_ms = max(
             (unit.end_ms for unit in units),
@@ -102,9 +94,7 @@ class Qwen3ForcedAlignmentService(ForcedAlignmentService):
             input_text=text,
             normalized_text=normalized_text,
             forced_normalized_text=forced_normalized_text,
-            normalized_text_match=(
-                normalized_text == forced_normalized_text
-            ),
+            normalized_text_match=(normalized_text == forced_normalized_text),
             units=units,
             diagnostics={
                 "max_audio_seconds": self.max_audio_seconds,
@@ -117,17 +107,13 @@ class Qwen3ForcedAlignmentService(ForcedAlignmentService):
             return self._model
 
         if not self.model_dir.exists():
-            raise FileNotFoundError(
-                f"Qwen3 ForcedAligner 模型目录不存在：{self.model_dir}"
-            )
+            raise FileNotFoundError(f"Qwen3 ForcedAligner 模型目录不存在：{self.model_dir}")
 
         try:
             import torch
-            from qwen_asr import Qwen3ForcedAligner
+            from qwen_asr import Qwen3ForcedAligner  # type: ignore[import-untyped]
         except ImportError as exc:
-            raise RuntimeError(
-                "缺少 qwen-asr/torch 运行时依赖，请先执行 `uv sync`。"
-            ) from exc
+            raise RuntimeError("缺少 qwen-asr/torch 运行时依赖，请先执行 `uv sync`。") from exc
 
         dtype = _torch_dtype(torch, self.dtype)
 
@@ -216,9 +202,7 @@ def _torch_dtype(torch_module: Any, dtype: str) -> Any:
     try:
         return supported[dtype]
     except KeyError as exc:
-        raise ValueError(
-            f"不支持的 Qwen3 forced aligner dtype：{dtype}"
-        ) from exc
+        raise ValueError(f"不支持的 Qwen3 forced aligner dtype：{dtype}") from exc
 
 
 def _convert_unit(
@@ -230,12 +214,8 @@ def _convert_unit(
     return ForcedAlignmentUnit(
         index=index,
         text=text,
-        start_ms=_seconds_to_ms(
-            getattr(item, "start_time")
-        ),
-        end_ms=_seconds_to_ms(
-            getattr(item, "end_time")
-        ),
+        start_ms=_seconds_to_ms(item.start_time),
+        end_ms=_seconds_to_ms(item.end_time),
         normalized_text=normalize_text(text).text,
     )
 

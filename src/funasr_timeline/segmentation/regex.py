@@ -49,6 +49,7 @@ class RegexSentenceSegmenter(SentenceSegmenter):
                         char_start=char_start,
                         char_end=char_end,
                         boundary=boundary,
+                        segmenter=self.name,
                     )
                 )
 

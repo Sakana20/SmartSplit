@@ -7,8 +7,15 @@ import soundfile as sf  # type: ignore[import-untyped]
 
 from funasr_timeline.merge import SentenceTimelineItem
 from funasr_timeline.render.base import TimelineRenderer
+from funasr_timeline.render.postprocess import (
+    SubtitleCue,
+    SubtitlePostprocessResult,
+    postprocess_subtitle_cues,
+)
 
 DEFAULT_TIMELINE_FPS = 30
+DEFAULT_SUBTITLE_GAP_THRESHOLD_MS = round(20 * 1000 / DEFAULT_TIMELINE_FPS)
+DEFAULT_SUBTITLE_MIN_DURATION_MS = round(6 * 1000 / DEFAULT_TIMELINE_FPS)
 
 
 class SrtTimelineRenderer(TimelineRenderer):
@@ -20,11 +27,21 @@ class SrtTimelineRenderer(TimelineRenderer):
         subtitle_alignment_audio: Path | None = None,
         *,
         align_first_subtitle_to_audio_start: bool = True,
+        gap_threshold_ms: int = DEFAULT_SUBTITLE_GAP_THRESHOLD_MS,
+        minimum_duration_ms: int = DEFAULT_SUBTITLE_MIN_DURATION_MS,
     ) -> None:
         self.subtitle_alignment_audio = subtitle_alignment_audio
         self.align_first_subtitle_to_audio_start = align_first_subtitle_to_audio_start
+        self.gap_threshold_ms = gap_threshold_ms
+        self.minimum_duration_ms = minimum_duration_ms
 
     def render(self, items: list[SentenceTimelineItem]) -> str:
+        rendered, _ = self.render_with_report(items)
+        return rendered
+
+    def render_with_report(
+        self, items: list[SentenceTimelineItem]
+    ) -> tuple[str, SubtitlePostprocessResult]:
         renderable_items = [
             item
             for item in items
@@ -33,7 +50,11 @@ class SrtTimelineRenderer(TimelineRenderer):
             and item.end_ms >= item.start_ms
         ]
         if not renderable_items:
-            return ""
+            return "", postprocess_subtitle_cues(
+                [],
+                gap_threshold_ms=self.gap_threshold_ms,
+                minimum_duration_ms=self.minimum_duration_ms,
+            )
 
         aligned_end_ms = (
             audio_duration_ms(self.subtitle_alignment_audio)
@@ -51,8 +72,8 @@ class SrtTimelineRenderer(TimelineRenderer):
                 f"audio_end_ms={aligned_end_ms} subtitle_start_ms={last_item.start_ms}"
             )
 
-        blocks: list[str] = []
-        for cue_index, item in enumerate(renderable_items, start=1):
+        cues: list[SubtitleCue] = []
+        for item in renderable_items:
             assert item.start_ms is not None
             assert item.end_ms is not None
             start_ms = (
@@ -64,16 +85,33 @@ class SrtTimelineRenderer(TimelineRenderer):
                 aligned_end_ms if item is last_item and aligned_end_ms is not None else item.end_ms
             )
 
+            cues.append(
+                SubtitleCue(
+                    source_index=item.index,
+                    text=item.text,
+                    start_ms=start_ms,
+                    end_ms=end_ms,
+                )
+            )
+
+        result = postprocess_subtitle_cues(
+            cues,
+            gap_threshold_ms=self.gap_threshold_ms,
+            minimum_duration_ms=self.minimum_duration_ms,
+        )
+        blocks: list[str] = []
+        for cue_index, cue in enumerate(result.cues, start=1):
             blocks.append(
                 "\n".join(
                     [
                         str(cue_index),
-                        f"{format_srt_timestamp(start_ms)} --> {format_srt_timestamp(end_ms)}",
-                        item.text,
+                        f"{format_srt_timestamp(cue.start_ms)} --> "
+                        f"{format_srt_timestamp(cue.end_ms)}",
+                        cue.text,
                     ]
                 )
             )
-        return "\n\n".join(blocks) + "\n"
+        return "\n\n".join(blocks) + "\n", result
 
 
 def audio_duration_ms(audio_path: Path) -> int:

@@ -50,6 +50,7 @@ def load_editable_segments(path: Path) -> SegmentationResult:
                 char_start=char_start,
                 char_end=offset,
                 boundary="editable",
+                segmenter="editable",
             )
         )
         has_segment_in_current_paragraph = True

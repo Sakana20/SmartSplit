@@ -12,6 +12,8 @@ class SentenceSegment:
     char_start: int
     char_end: int
     boundary: str
+    segmenter: str = ""
+    source_block_id: str | None = None
     normalized_text: str = ""
     normalized_start: int | None = None
     normalized_end: int | None = None
@@ -24,6 +26,8 @@ class SentenceSegment:
             "char_start": self.char_start,
             "char_end": self.char_end,
             "boundary": self.boundary,
+            "segmenter": self.segmenter,
+            "source_block_id": self.source_block_id,
             "normalized_text": self.normalized_text,
             "normalized_start": self.normalized_start,
             "normalized_end": self.normalized_end,

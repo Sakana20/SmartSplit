@@ -2,7 +2,13 @@ import wave
 from pathlib import Path
 
 from funasr_timeline.merge import SentenceTimelineItem
-from funasr_timeline.render import SrtTimelineRenderer, audio_duration_ms, format_srt_timestamp
+from funasr_timeline.render import (
+    SrtTimelineRenderer,
+    SubtitleCue,
+    audio_duration_ms,
+    format_srt_timestamp,
+    postprocess_subtitle_cues,
+)
 
 
 def test_format_srt_timestamp() -> None:
@@ -79,6 +85,74 @@ def test_srt_renderer_rejects_audio_ending_before_last_cue(tmp_path: Path) -> No
         assert "早于最后一条字幕的开始时间" in str(error)
     else:
         raise AssertionError("expected invalid alignment audio duration to fail")
+
+
+def test_postprocess_fills_only_gaps_within_threshold() -> None:
+    result = postprocess_subtitle_cues(
+        [
+            SubtitleCue(source_index=0, text="第一句", start_ms=0, end_ms=500),
+            SubtitleCue(source_index=1, text="第二句", start_ms=567, end_ms=1000),
+            SubtitleCue(source_index=2, text="第三句", start_ms=1068, end_ms=1500),
+        ],
+        gap_threshold_ms=67,
+        minimum_duration_ms=0,
+    )
+
+    assert result.cues[0].end_ms == 567
+    assert result.cues[1].end_ms == 1000
+    assert result.adjustments == [
+        {
+            "type": "short_gap_filled",
+            "source_index": 0,
+            "next_source_index": 1,
+            "gap_ms": 67,
+            "original_end_ms": 500,
+            "adjusted_end_ms": 567,
+        }
+    ]
+
+
+def test_postprocess_extends_short_cue_without_overlap() -> None:
+    original = SubtitleCue(source_index=0, text="短句", start_ms=100, end_ms=150)
+    result = postprocess_subtitle_cues(
+        [
+            original,
+            SubtitleCue(source_index=1, text="下一句", start_ms=400, end_ms=900),
+        ],
+        gap_threshold_ms=0,
+        minimum_duration_ms=200,
+    )
+
+    assert result.cues[0].start_ms == 100
+    assert result.cues[0].end_ms == 300
+    assert result.cues[0].end_ms <= result.cues[1].start_ms
+    assert original.end_ms == 150
+    assert result.unresolved_short_cues == []
+
+
+def test_postprocess_reports_short_cue_when_no_free_time_exists() -> None:
+    result = postprocess_subtitle_cues(
+        [
+            SubtitleCue(source_index=0, text="前句", start_ms=0, end_ms=500),
+            SubtitleCue(source_index=1, text="短句", start_ms=500, end_ms=550),
+            SubtitleCue(source_index=2, text="后句", start_ms=550, end_ms=1000),
+        ],
+        gap_threshold_ms=67,
+        minimum_duration_ms=200,
+    )
+
+    assert result.unresolved_short_cues == [
+        {"source_index": 1, "start_ms": 500, "end_ms": 550, "duration_ms": 50}
+    ]
+
+
+def test_postprocess_rejects_negative_thresholds() -> None:
+    try:
+        postprocess_subtitle_cues([], gap_threshold_ms=-1, minimum_duration_ms=200)
+    except ValueError as error:
+        assert "间隙阈值" in str(error)
+    else:
+        raise AssertionError("expected negative threshold to fail")
 
 
 def _item(

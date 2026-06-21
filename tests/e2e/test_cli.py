@@ -1,7 +1,16 @@
 import json
 from pathlib import Path
 
-from funasr_timeline.cli import main
+from funasr_timeline.cli import build_parser, main
+
+
+def test_cli_llm_failure_defaults_to_hanlp_fallback_without_raise() -> None:
+    args = build_parser().parse_args(["--manuscript", "input.txt", "--output-dir", "output"])
+
+    assert args.llm_fallback_segmenter == "hanlp"
+    assert args.llm_raise_on_error is False
+    assert args.subtitle_gap_threshold_ms == 67
+    assert args.subtitle_min_duration_ms == 200
 
 
 def test_cli_generates_expected_files(tmp_path: Path) -> None:
@@ -31,6 +40,7 @@ def test_cli_generates_expected_files(tmp_path: Path) -> None:
     sentence_timeline_path = tmp_path / "sentence_timeline.json"
     assert sentence_timeline_path.exists()
     assert (tmp_path / "sentence_timeline.srt").exists()
+    assert (tmp_path / "subtitle_render_report.json").exists()
 
     sentence_timeline = json.loads(sentence_timeline_path.read_text(encoding="utf-8"))
     assert len(sentence_timeline) == 2

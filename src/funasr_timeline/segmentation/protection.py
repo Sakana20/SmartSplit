@@ -31,6 +31,7 @@ def append_protected_segment(segments: list[SentenceSegment], block: TextBlock) 
             char_start=block.start + leading_whitespace_len(block.text),
             char_end=block.end - trailing_whitespace_len(block.text),
             boundary="protected",
+            segmenter="protected",
         )
     )
 
@@ -44,6 +45,12 @@ def split_text_blocks(text: str) -> tuple[str, list[TextBlock]]:
 
     while raw_position < len(text):
         start_marker = text.find(NO_SPLIT_START, raw_position)
+        unexpected_end_marker = text.find(NO_SPLIT_END, raw_position)
+        if unexpected_end_marker != -1 and (
+            start_marker == -1 or unexpected_end_marker < start_marker
+        ):
+            raise ValueError(f"存在未配对的不分句结束标记：{NO_SPLIT_END}")
+
         if start_marker == -1:
             clean_position, paragraph_index = _append_unprotected_blocks(
                 text[raw_position:],
@@ -65,6 +72,9 @@ def split_text_blocks(text: str) -> tuple[str, list[TextBlock]]:
         end_marker = text.find(NO_SPLIT_END, protected_start)
         if end_marker == -1:
             raise ValueError(f"缺少不分句结束标记：{NO_SPLIT_END}")
+        nested_start_marker = text.find(NO_SPLIT_START, protected_start)
+        if nested_start_marker != -1 and nested_start_marker < end_marker:
+            raise ValueError("不分句保护标记不支持嵌套")
 
         protected_text = text[protected_start:end_marker]
         if protected_text:
@@ -88,6 +98,12 @@ def split_text_blocks(text: str) -> tuple[str, list[TextBlock]]:
     protected_count = sum(1 for block in blocks if block.protected)
     logger.debug("文本块拆分完成：blocks={} protected={}", len(blocks), protected_count)
     return "".join(prepared_parts), blocks
+
+
+def remove_no_split_markers(text: str) -> str:
+    """Validate protection markers and return the text that should be spoken or aligned."""
+    prepared_text, _ = split_text_blocks(text)
+    return prepared_text
 
 
 def leading_whitespace_len(text: str) -> int:

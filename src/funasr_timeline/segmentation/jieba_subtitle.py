@@ -74,6 +74,7 @@ class JiebaSubtitleSegmenter(SentenceSegmenter):
                             char_start=char_start + leading_whitespace_len(raw_chunk),
                             char_end=char_end - trailing_whitespace_len(raw_chunk),
                             boundary=boundary,
+                            segmenter=self.name,
                         )
                     )
 

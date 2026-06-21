@@ -17,7 +17,11 @@ from funasr_timeline.forced_alignment.sentence_mapper import (
 from funasr_timeline.manuscript import read_txt_manuscript
 from funasr_timeline.merge import SentenceTimelineItem, merge_sentence_timelines
 from funasr_timeline.normalization import NormalizedText, normalize_text
-from funasr_timeline.render.srt import SrtTimelineRenderer
+from funasr_timeline.render.srt import (
+    DEFAULT_SUBTITLE_GAP_THRESHOLD_MS,
+    DEFAULT_SUBTITLE_MIN_DURATION_MS,
+    SrtTimelineRenderer,
+)
 from funasr_timeline.report import build_alignment_report
 from funasr_timeline.segmentation.base import SentenceSegment, SentenceSegmenter
 from funasr_timeline.segmentation.editable import export_editable_segments, load_editable_segments
@@ -44,6 +48,8 @@ def run_pipeline(
     telemetry_config: TelemetryConfig | None = None,
     subtitle_alignment_audio: Path | None = None,
     align_first_subtitle_to_audio_start: bool = True,
+    subtitle_gap_threshold_ms: int = DEFAULT_SUBTITLE_GAP_THRESHOLD_MS,
+    subtitle_min_duration_ms: int = DEFAULT_SUBTITLE_MIN_DURATION_MS,
 ) -> dict[str, Path]:
     logger.debug(
         "开始完整流程：manuscript={} audio={} output_dir={}",
@@ -131,6 +137,8 @@ def run_pipeline(
     srt_renderer = SrtTimelineRenderer(
         subtitle_alignment_audio=subtitle_alignment_audio,
         align_first_subtitle_to_audio_start=align_first_subtitle_to_audio_start,
+        gap_threshold_ms=subtitle_gap_threshold_ms,
+        minimum_duration_ms=subtitle_min_duration_ms,
     )
     telemetry = _build_telemetry(
         timeline_provider=timeline_provider,
@@ -152,6 +160,7 @@ def run_pipeline(
         segmenter_name=f"editable:{segments_path}" if segments_path is not None else segmenter.name,
         telemetry_summary=_telemetry_summary(telemetry),
     )
+    rendered_srt, render_postprocess = srt_renderer.render_with_report(sentence_items)
 
     paths = {
         "word_timeline": output_dir / "word_timeline.json",
@@ -160,6 +169,7 @@ def run_pipeline(
         "alignment": output_dir / "alignment.json",
         "sentence_timeline": output_dir / "sentence_timeline.json",
         "sentence_timeline_srt": output_dir / f"sentence_timeline{srt_renderer.file_extension}",
+        "subtitle_render_report": output_dir / "subtitle_render_report.json",
         "alignment_report": output_dir / "alignment_report.json",
     }
     if forced_result is not None:
@@ -202,7 +212,14 @@ def run_pipeline(
         },
     )
     _write_json(paths["sentence_timeline"], [item.to_dict() for item in sentence_items])
-    _write_text(paths["sentence_timeline_srt"], srt_renderer.render(sentence_items))
+    _write_text(paths["sentence_timeline_srt"], rendered_srt)
+    _write_json(
+        paths["subtitle_render_report"],
+        render_postprocess.to_report(
+            gap_threshold_ms=subtitle_gap_threshold_ms,
+            minimum_duration_ms=subtitle_min_duration_ms,
+        ),
+    )
     _write_json(paths["alignment_report"], report)
     if forced_result is not None:
         _write_json(paths["forced_alignment"], forced_result.to_dict())

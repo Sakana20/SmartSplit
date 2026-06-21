@@ -51,7 +51,7 @@ uv run mypy src
 - mock ASR 服务，用于 fixture 驱动和常规测试。
 - 本地 `paraformer-zh` 服务实现，内部使用 FunASR `AutoModel`，默认模型目录为 `/Users/sakana/PyEnv/paraformer`。
 - macOS MPS 推理支持，默认设备为 `mps`。
-- 可通过 `--segmenter` 选择分句实现，当前内置 `regex`、`jieba-subtitle`，并支持可选在线 `llm` 分句。
+- 可通过 `--segmenter` 选择分句实现，当前内置 `regex`、`hanlp`、`jieba-subtitle`，并支持可选在线 `llm` 分句。
 - 支持 `[[NO_SPLIT]]...[[/NO_SPLIT]]` 成对标记保护不分句片段。
 - 支持分句单独运行，输出一行一句的可编辑分句文本，并支持从编辑后的分句文本继续执行完整流程。
 - 基础文本归一化。
@@ -125,7 +125,7 @@ tests/fixtures/stage1_paraformer/
 
 - ASR 服务统一接口：每个真实 ASR 服务都实现同一接口。
 - Forced alignment 服务独立于 ASR 接口：该服务接收音频和真实文本，输出文本单元时间戳，不能伪装成 `AsrService`。
-- 句子切分统一接口：当前内置 `regex`、`jieba-subtitle` 和 `llm`，后续可继续增加实现。
+- 句子切分统一接口：当前内置 `regex`、`hanlp`、`jieba-subtitle` 和 `llm`，后续可继续增加实现。
 - 音频输入适配层：当前接收 `.mp3`，后续扩展多格式检测和格式转换。
 - 渲染输出统一接口：当前已实现 SRT，后续可扩展 VTT、CSV 等格式。
 - 输出 schema 可扩展：保留中间字段和诊断字段，避免后续分析缺少排查依据。
@@ -156,6 +156,7 @@ src/
       normalization.py
       protection.py
       regex.py
+      hanlp.py
       jieba_subtitle.py
       llm.py
     render/
@@ -208,10 +209,13 @@ tests/
 - `--manuscript path/to/input.txt`
 - `--audio path/to/input.mp3`
 - `--output-dir path/to/output`
-- `--segmenter regex|jieba-subtitle|llm`
+- `--segmenter regex|hanlp|jieba-subtitle|llm`
+- `--segment-threshold 10`
 - `--llm-config configs/llm-siliconflow.toml`
 - `--segment-only`
 - `--segments path/to/editable_segments.txt`
+- `--subtitle-gap-threshold-ms 67`
+- `--subtitle-min-duration-ms 200`
 - `--timeline-provider asr-fuzzy|qwen3-forced|hybrid`
 - `--aligner-config configs/aligner-qwen3.toml`
 - `--asr-provider mock|paraformer-zh`
@@ -269,7 +273,7 @@ tests/
 
 ### 3. 稿件句子切分
 
-句子切分通过 `SentenceSegmenter` 接口实现，当前内置 `regex`、`jieba-subtitle` 和可选在线 `llm` 三个实现。
+句子切分通过 `SentenceSegmenter` 接口实现，当前内置 `regex`、`hanlp`、`jieba-subtitle` 和可选在线 `llm` 四个实现。
 
 默认强边界：
 
@@ -281,7 +285,13 @@ tests/
 
 `regex` 实现不按逗号切长句，适合保留自然句。`jieba-subtitle` 实现会先按强标点和段落形成基础范围，再把逗号、顿号等标点作为短语边界，去除标点后使用 jieba 分词拼接短句，默认目标为单句归一化文本不超过 10 个字符，并保证同一个词不会被切到两个句子中。该实现还内置少量短视频字幕常见软切分点，例如 `特别`、`直接`，用于把过长表达拆成更自然的语义短语。
 
-`llm` 实现通过 TOML 配置读取 OpenAI-compatible Chat Completions 端点、模型、超时和 API key 环境变量。prompt 使用 Jinja2 渲染，包含任务说明、短视频字幕约束、保护段说明、纯文本换行输出约束和多样化 few-shot 示例，并把待分割文本放在最后。一次请求会提交多个文本段，模型必须只输出“在原文中插入换行后的文本”，不输出 XML、JSON、解释、标题或 block id；多个 block 之间使用固定分隔行 `<<<BLOCK_SEPARATOR>>>`。LLM 输出必须保留原文标点，同一 block 内所有输出行直接拼接后必须与原文完全一致。校验通过后，程序从原稿切片生成最终分句文本，并按规则去掉分句两端的边界标点。prompt 会强调常规口播字幕优先控制在 4 到 12 个中文字符左右，每个分句去掉首尾边界标点后的中文字符硬上限为 14 个；英文、数字、标点符号不计入长度。超过上限会作为 `segment_too_long` 校验失败进入 LLM 反馈修复流程，要求模型按意群边界、自然停顿、并列枚举、动作切换或软断点继续拆分。品牌、商品名、权益短语、链接引导、数字单位、英文型号和 CTA 表达允许适当更长，但仍需遵守 14 个中文字符上限，并尽量避免拆坏关键词。改写正文、新增空格、删掉标点、漏掉正文或输出过长分句会直接报错，不自动回退。完整流程和独立分句会在输出目录写出 `llm_segmentation_diagnostics.json`，记录请求 block、原始响应、解析结果和失败覆盖诊断。
+`hanlp` 实现使用中文多任务模型执行 constituency 解析。输入先按 `，,、。！？!?；;：:` phrase 边界拆句，保证 fallback 不跨逗号、顿号、句号、分号或冒号，再从语法树叶节点取得 token 并按顺序窗口拼接。加入下一个 token 会超过折算阈值时切分，默认阈值为 10；汉字计 1，英文和数字每两个计 1，标点、空白、符号和分隔符不计。单个 token 即使超过阈值也保持完整。模型由 HanLP 下载并复用本地缓存。
+
+`llm` 实现通过 TOML 配置读取 OpenAI-compatible Chat Completions 端点、模型、超时和 API key 环境变量。prompt 使用 Jinja2 渲染，包含任务说明、短视频字幕约束、保护段说明、纯文本换行输出约束和多样化 few-shot 示例，并把待分割文本放在最后。进入 LLM 前先由确定性预处理移除保护段，保护标记两侧形成强制 block 边界，紧邻标记的外侧边界标点从模型视图中裁掉。每个预处理 block 分别创建一个只包含该 block 的 LLM 请求，所有 block 以 block 数量作为并发数同时执行，不再要求模型输出跨 block 分隔符。
+
+每个 block 独立维护请求、校验和反馈重试状态。覆盖校验会从原文和模型结果中删除标点、空格、换行及其他分隔符，对剩余字母、中文和数字执行 Unicode 归一化后比较；模型新增空格或改变标点可以接受，漏字、改字和数字变化仍会失败。校验通过后立即结束该 block 的任务，不再参与后续反馈；失败 block 只携带自己的原文、上次输出和错误独立重试。程序根据通过校验的内容字符顺序定位原稿 offset，从原稿切片生成最终文本，因此模型新增的空格和标点不会进入字幕。所有 block 完成后按初始顺序合并，再按规则去掉分句两端的边界标点并把保护段按原顺序和 offset 拼回。
+
+prompt 会强调常规口播字幕的折算长度优先控制在 4 到 8 个汉字，硬上限为 10；汉字计 1，英文和数字每两个计 1，标点符号不计。请求异常、响应解析错误和内容校验错误都在当前 block 内独立重试。重试耗尽后默认只记录 error 日志，并把失败 block 交给可配置 fallback 分句器，默认使用 `hanlp`；`--llm-raise-on-error` 可改为直接抛错并终止。成功 block 不重跑，最终仍按原 block 顺序合并。`manuscript_segments.json` 为每个分句记录 `segmenter` 和 `source_block_id`，诊断文件记录失败原因与最终 block 策略，供后续 telemetry 使用。
 
 稿件中可以用成对标记保护不需要自动分句的片段：
 
@@ -289,7 +299,7 @@ tests/
 普通句子。[[NO_SPLIT]]这部分。不要切开！整体保留。[[/NO_SPLIT]]继续分句。
 ```
 
-标记本身会在进入归一化、匹配和字幕输出前移除；标记包住的内容会作为一个 `boundary` 为 `protected` 的完整分句。
+标记由上游直接写入输入 `.txt` 稿件，不在分句阶段按关键词动态推断。标记本身会在进入归一化、匹配和字幕输出前移除；标记包住的内容会作为一个 `boundary` 为 `protected` 的完整分句。开始和结束标记位置都属于强制分句边界，普通文本不能跨保护段合并。保护段不发送给 LLM，模型处理完成后由程序按原位置拼回；缺少结束标记、孤立结束标记和嵌套标记均视为输入错误。同一输入用于 TTS 时，先通过 `remove_no_split_markers()` 生成仅移除控制标记的朗读文本。真实剪映 E2E 的 `DEMO_TEXT` 直接包含保护标记，并分别验证 TTS 输入、LLM 请求、`manuscript_segments.json` 和最终字幕中的保护段行为。
 
 分句也可以单独运行：
 
@@ -313,6 +323,8 @@ uv run funasr-timeline \
   "char_start": 0,
   "char_end": 5,
   "boundary": "punctuation",
+  "segmenter": "regex",
+  "source_block_id": null,
   "normalized_text": "第一句话",
   "normalized_start": 0,
   "normalized_end": 4
@@ -412,6 +424,7 @@ uv run funasr-timeline \
 当前已通过 `render/base.py` 提供渲染接口，并在 `render/srt.py` 实现 `SrtTimelineRenderer`。pipeline 会基于最终 `sentence_timeline.json` 中的句子文本和无重叠时间范围生成：
 
 - `.srt`
+- `subtitle_render_report.json`
 
 SRT 渲染规则：
 
@@ -419,9 +432,12 @@ SRT 渲染规则：
 - 时间格式为 `HH:MM:SS,mmm`。
 - 缺失 `start_ms` 或 `end_ms` 的句子不会渲染为字幕块。
 - 渲染顺序与 `sentence_timeline.json` 中的句子顺序一致。
+- 相邻有效字幕之间大于 0 且不超过 `--subtitle-gap-threshold-ms` 的空隙视为空白闪轴，默认阈值为 67ms（30fps 下 2 帧）；渲染时把上一条字幕延长到下一条开始时间。设置为 `0` 可关闭。
+- 持续时间短于 `--subtitle-min-duration-ms` 的字幕默认优先向右、再向左利用空闲时间延长，默认最短时间为 200ms（30fps 下 6 帧）。修正不得产生相邻字幕重叠；空间不足时保留可达到的时间并记录为未完全修复。设置为 `0` 可关闭。
 - 默认仅在 SRT 渲染时将第一条有效字幕的开始时间对齐到音频起点 `00:00:00,000`，可通过 `--no-align-first-subtitle-to-audio-start` 关闭。
 - 默认将最后一条有效字幕的结束时间对齐到字幕对齐音频的实际结束时间，并向上取整到 30fps 帧边界。CLI 通过 `--subtitle-alignment-audio` 接收该音频，未指定时使用 `--audio`，并可通过 `--no-align-last-subtitle-to-audio-end` 关闭。
 - 末条结束时间修正仅存在于 SRT renderer 输出，不回写 `SentenceTimelineItem`，也不改变 `sentence_timeline.json`、匹配或诊断结果。
+- 闪轴修正同样只作用于渲染副本，不回写主时间轴；每次修正和无法完全修复的短字幕写入 `subtitle_render_report.json`。
 - 如果 TTS 音频为适配 ASR 而转换格式，字幕对齐使用转换前的原始 TTS 音频，避免编码或容器时长差异影响末条字幕。
 
 后续可继续增加：
@@ -460,7 +476,7 @@ ASR fuzzy 已在真实 `paraformer-zh` token 级时间轴可用的基础上，�
 
 当前实现继续遵守以下约束：
 
-- 分句通过统一接口选择，当前可用 `regex`、`jieba-subtitle` 和 `llm`；CLI 默认值为 `regex`。
+- 分句通过统一接口选择，当前可用 `regex`、`hanlp`、`jieba-subtitle` 和 `llm`；CLI 默认值为 `regex`。
 - 最终句子文本仍以 ground truth 稿件原文为准。
 - 不处理领域词、同义词等复杂归一化。数字读法目前只做轻量匹配兼容，不作为完整归一化能力。
 - 不引入全局动态规划或复杂搜索，除非后续 fixture 证明确有必要。
@@ -475,7 +491,7 @@ ASR fuzzy 已在真实 `paraformer-zh` token 级时间轴可用的基础上，�
 - 按段落边界切分并保留 `paragraph_index`。
 - 段落内部按强标点切分。
 - 强边界包括 `。`、`！`、`？`、`!`、`?`、`；`、`;`。
-- `regex` 输出保留强边界标点；`jieba-subtitle` 输出短字幕风格文本，不保留边界标点；`llm` 原始输出保留标点用于校验，最终分句再去掉首尾边界标点。
+- `regex` 输出保留强边界标点；`hanlp` 将 phrase 标点作为强制切分点并从输出两端移除；`jieba-subtitle` 输出短字幕风格文本，不保留边界标点；`llm` 原始输出保留标点用于校验，最终分句再去掉首尾边界标点。
 - 不按逗号切分。
 - 空段落不产出句子。
 
@@ -630,7 +646,7 @@ ASR fuzzy 已在真实 `paraformer-zh` token 级时间轴可用的基础上，�
 - 默认 CLI fixture 测试：使用 mock ASR、mock forced aligner 和小型 fixture，覆盖 CLI 从输入文件到 JSON/SRT 输出的流程。
 - 真实 demo 测试：复用剪映 demo 的长中文混合文本，调用剪映 TTS 生成音频，使用 LLM 分句，通过 `hybrid` 同时运行 Qwen3 forced aligner 和本地 `paraformer-zh`/FunASR ASR，并写出 `e2e_diagnostics.json`，用于检查句子数量、状态分布、telemetry 差异、TTS/音频转换/剪映草稿信息和报告摘要。
 
-真实 demo 测试位于 `tests/e2e/test_jianying_smartsplit_demo.py`，默认会随 pytest 执行。运行前需要准备 `configs/llm-siliconflow.toml`、`configs/aligner-qwen3.toml`、可 import 的剪映 Python 接口、TTS 后端、本地模型和 `FUNASR_TIMELINE_LLM_API_KEY`。
+真实 demo 测试位于 `tests/e2e/test_jianying_smartsplit_demo.py`，默认会随 pytest 执行。运行前需要准备 `configs/llm-siliconflow.toml`、`configs/aligner-qwen3.toml`、可 import 的剪映 Python 接口、TTS 后端、本地模型和 `FUNASR_TIMELINE_LLM_API_KEY`。子进程 stdout/stderr 使用双线程 tee 读取，避免管道阻塞；运行 `pytest -s` 时日志实时显示，同时逐行保留到成功或失败 diagnostics。
 
 只运行常规确定性测试时，可使用：
 
@@ -671,7 +687,7 @@ uv run pytest -m 'not e2e_real'
 - 稿件使用 `.txt` 纯文本，内容为分段文本。
 - 当前先支持 `.mp3` 音频。
 - 后续需要支持 `.wav`、`.ogg` 等常见格式，或通过转换统一输入格式。
-- 句子切分保留接口，当前内置 `regex`、`jieba-subtitle` 和 `llm`。
+- 句子切分保留接口，当前内置 `regex`、`hanlp`、`jieba-subtitle` 和 `llm`。
 - JSON 输出要尽可能丰富，服务于后续分析调整。
 - 完整数字归一化、领域词、同义词等暂不处理；当前仅保留轻量数字读法匹配兼容。
 - 真实 ASR 模型通过统一接口接入；当前已实现本地 `paraformer-zh` 服务，内部使用 FunASR `AutoModel`。
@@ -680,7 +696,7 @@ uv run pytest -m 'not e2e_real'
 - 本地 Qwen3 forced aligner 模型目录为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`。
 - macOS 上默认使用 `mps` 推理。
 - 最终句子文本默认使用原始稿件。
-- CLI `--segmenter` 默认值为 `regex`；短视频字幕可显式使用 `jieba-subtitle` 或 `llm`。
+- CLI `--segmenter` 默认值为 `regex`；短视频字幕可显式使用 `hanlp`、`jieba-subtitle` 或 `llm`。
 - 默认 aligner 配置为 `hybrid`，主时间来源为 `qwen3-forced`，ASR fuzzy 结果保留到 diagnostics 和 telemetry。
 - ASR fuzzy 句子到 token 的匹配采用顺序窗口 fuzzy 匹配。
 - 最终句子时间范围必须保证相邻句子不重叠。

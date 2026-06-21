@@ -16,7 +16,15 @@ from funasr_timeline.forced_alignment import (
 from funasr_timeline.forced_alignment.config import TimelineProvider
 from funasr_timeline.logging import configure_logging, print_output_paths
 from funasr_timeline.pipeline import run_pipeline, run_segmentation
-from funasr_timeline.segmentation.factory import available_segmenters, create_segmenter
+from funasr_timeline.render.srt import (
+    DEFAULT_SUBTITLE_GAP_THRESHOLD_MS,
+    DEFAULT_SUBTITLE_MIN_DURATION_MS,
+)
+from funasr_timeline.segmentation.factory import (
+    available_llm_fallback_segmenters,
+    available_segmenters,
+    create_segmenter,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,6 +46,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="关闭第一条字幕开始时间到音频起点 00:00:00,000 的对齐。",
     )
+    parser.add_argument(
+        "--subtitle-gap-threshold-ms",
+        type=int,
+        default=DEFAULT_SUBTITLE_GAP_THRESHOLD_MS,
+        help="填充空白闪轴的最大相邻字幕间隙；默认 670ms（30fps 下 20 帧），0 表示关闭。",
+    )
+    parser.add_argument(
+        "--subtitle-min-duration-ms",
+        type=int,
+        default=DEFAULT_SUBTITLE_MIN_DURATION_MS,
+        help="渲染字幕的最短持续时间；默认 200ms（30fps 下 6 帧），0 表示关闭。",
+    )
     parser.add_argument("--output-dir", required=True, type=Path, help="输出目录")
     parser.add_argument(
         "--segment-only",
@@ -56,10 +76,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="分句实现。当前默认使用 regex。",
     )
     parser.add_argument(
+        "--segment-threshold",
+        type=int,
+        default=10,
+        help="hanlp 分句的有效字符数阈值；标点、空白和分隔符不计数。",
+    )
+    parser.add_argument(
         "--llm-config",
         type=Path,
         default=Path("configs/llm-siliconflow.toml"),
         help="LLM 分句配置文件路径，仅在 --segmenter llm 时读取。",
+    )
+    parser.add_argument(
+        "--llm-fallback-segmenter",
+        choices=available_llm_fallback_segmenters(),
+        default="hanlp",
+        help="LLM block 重试失败后的分句器。默认使用 hanlp。",
+    )
+    parser.add_argument(
+        "--llm-raise-on-error",
+        action="store_true",
+        help="LLM block 重试失败后直接抛错，不执行 fallback。默认关闭。",
     )
     parser.add_argument(
         "--timeline-provider",
@@ -105,7 +142,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     configure_logging(quiet=args.quiet)
-    segmenter = create_segmenter(args.segmenter, llm_config_path=args.llm_config)
+    segmenter = create_segmenter(
+        args.segmenter,
+        llm_config_path=args.llm_config,
+        segment_threshold=args.segment_threshold,
+        llm_fallback_segmenter=args.llm_fallback_segmenter,
+        llm_raise_on_error=args.llm_raise_on_error,
+    )
 
     if args.segment_only:
         paths = run_segmentation(
@@ -164,6 +207,8 @@ def main(argv: list[str] | None = None) -> int:
             else args.subtitle_alignment_audio or args.audio
         ),
         align_first_subtitle_to_audio_start=(not args.no_align_first_subtitle_to_audio_start),
+        subtitle_gap_threshold_ms=args.subtitle_gap_threshold_ms,
+        subtitle_min_duration_ms=args.subtitle_min_duration_ms,
     )
     print_output_paths(paths)
     return 0

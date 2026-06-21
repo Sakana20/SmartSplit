@@ -38,6 +38,7 @@ test_temp/
 - `alignment.json`
 - `sentence_timeline.json`
 - `sentence_timeline.srt`
+- `subtitle_render_report.json`
 - `alignment_report.json`
 
 `qwen3-forced` 或 `hybrid` 流程会额外生成：
@@ -172,6 +173,8 @@ Schema：
     "char_start": "integer",
     "char_end": "integer",
     "boundary": "string",
+    "segmenter": "string",
+    "source_block_id": "string | null",
     "normalized_text": "string",
     "normalized_start": "integer | null",
     "normalized_end": "integer | null"
@@ -186,6 +189,8 @@ Schema：
 - `paragraph_index`：段落序号，从 0 开始。
 - `char_start` / `char_end`：句子在原始稿件字符串中的半开区间 `[start, end)`。
 - `boundary`：切分边界来源。当前常见值为 `punctuation`、`paragraph`、`protected` 或 `editable`。
+- `segmenter`：实际生成该分句的实现，例如 `llm`、`hanlp`、`regex`、`jieba-subtitle`、`protected` 或 `editable`。
+- `source_block_id`：使用 LLM 编排时对应的 `block-N`；同一失败 block 的 fallback 分句共享该值。非 LLM 流程及保护片段为 `null`。
 - `normalized_text`：用于对齐的归一化句子文本。
 - `normalized_start` / `normalized_end`：句子在归一化稿件全文中的半开区间。
 
@@ -476,6 +481,8 @@ Schema：
 
 用途：保存由最终句子级时间轴渲染得到的 SRT 字幕文件。该产物通过 `render/srt.py` 中的 `SrtTimelineRenderer` 生成。
 
+渲染会在不修改 `sentence_timeline.json` 的前提下填充阈值内的短间隙，并尽量延长过短字幕；具体修改记录在 `subtitle_render_report.json`。
+
 格式示例：
 
 ```srt
@@ -495,6 +502,10 @@ Schema：
 - 时间格式为 SRT 标准 `HH:MM:SS,mmm`。
 - 字幕正文使用稿件原句 `text`，不使用 ASR 文本。
 - 缺失 `start_ms` 或 `end_ms` 的句子不会渲染为字幕块。
+
+## `subtitle_render_report.json`
+
+用途：保存 SRT 渲染阶段的闪轴修正诊断。`adjustments` 记录 `short_gap_filled` 和 `short_cue_extended`，`unresolved_short_cues` 记录因没有可用空闲时间而仍短于配置下限的字幕。
 
 ## `alignment_report.json`
 

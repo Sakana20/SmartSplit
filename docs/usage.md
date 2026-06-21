@@ -54,11 +54,33 @@
 - 结束标记：`[[/NO_SPLIT]]`
 - 标记本身不会进入最终匹配文本或字幕。
 - 标记内文本会作为一个完整分句输出。
+- 开始和结束标记所在位置都是强制分句边界，标记前后的普通文本不会跨保护段合并。
+- 使用 `llm` 分句时，保护段不会发送给模型；程序只发送两侧的普通文本，完成后再按原位置拼回保护段。
+- 紧邻标记、位于保护段外侧的逗号或句号等边界标点不会单独成句，也不会并入保护段。
+- 缺少结束标记、孤立结束标记或嵌套保护标记会明确报错。
+- 保护标记应由上游直接写入输入 `.txt` 稿件，而不是在分句期间根据关键词动态添加。
+- 如果同一份稿件还用于 TTS，合成语音前应调用 `remove_no_split_markers()` 得到去除标记但保留保护内容的朗读文本，避免把控制标记念出来。
 - 对应 `manuscript_segments.json` 中的 `boundary` 为 `protected`。
+
+例如：
+
+```text
+出门更省心。[[NO_SPLIT]]淘宝闪购最高12元无门槛红包可领取[[/NO_SPLIT]]，点击下方链接了解更多。
+```
+
+保护段会固定独占一句；LLM 分别处理“出门更省心”和“点击下方链接了解更多。”，结束标记后的逗号只作为接缝边界处理。
 
 ## 分句实现
 
 当前通过 `--segmenter` 选择分句实现。
+
+### `hanlp`
+
+`hanlp` 使用 HanLP 中文多任务模型执行 constituency 解析，并从 constituency tree
+的叶节点取得 token。程序先按 `，,、。！？!?；;：:` phrase 边界拆句，再按 token 顺序拼接；加入
+下一个 token 会让折算长度超过 `--segment-threshold`（默认 10）时开始新句。汉字计 1，
+英文和数字每两个计 1，标点、空白、符号及分隔符不计；单个超长 token 不会被拆开。
+模型由 HanLP 下载并缓存，后续运行复用本地缓存。
 
 ### `regex`
 
@@ -232,9 +254,14 @@ uv run funasr-timeline \
 | `--subtitle-alignment-audio` | 否 | `--audio` | 渲染 SRT 时用于将最后一条有效字幕的结束时间对齐到音频结尾。TTS 音频经过格式转换时，应传入转换前的原始音频。 |
 | `--no-align-last-subtitle-to-audio-end` | 否 | `false` | 关闭末条字幕结束时间到音频结尾的对齐。 |
 | `--no-align-first-subtitle-to-audio-start` | 否 | `false` | 关闭首条有效字幕开始时间到音频起点 `00:00:00,000` 的对齐。 |
+| `--subtitle-gap-threshold-ms` | 否 | `67` | 空白闪轴阈值；相邻字幕的正间隙不超过该值时延长上一条字幕以填满间隙，`0` 表示关闭。 |
+| `--subtitle-min-duration-ms` | 否 | `200` | 渲染字幕最短持续时间；短字幕在不重叠的前提下利用相邻空闲时间延长，`0` 表示关闭。 |
 | `--output-dir` | 是 | 无 | 输出目录。不存在会自动创建。 |
-| `--segmenter` | 否 | `regex` | 分句实现，可选 `regex`、`jieba-subtitle`、`llm`。 |
+| `--segmenter` | 否 | `regex` | 分句实现，可选 `regex`、`hanlp`、`jieba-subtitle`、`llm`。 |
+| `--segment-threshold` | 否 | `10` | `hanlp` 分句的有效字符数阈值。 |
 | `--llm-config` | `--segmenter llm` 时读取 | `configs/llm-siliconflow.toml` | OpenAI-compatible LLM 分句配置文件。 |
+| `--llm-fallback-segmenter` | 否 | `hanlp` | LLM block 重试耗尽后的 fallback，可选 `hanlp`、`jieba-subtitle`、`regex`。 |
+| `--llm-raise-on-error` | 否 | `false` | 重试耗尽后直接抛错并停止，不执行 block fallback。 |
 | `--segment-only` | 否 | `false` | 只运行分句，输出可编辑分句文本和结构化分句 JSON。 |
 | `--segments` | 否 | 无 | 使用人工编辑后的一行一句文本替代自动分句结果。 |
 | `--timeline-provider` | 否 | 配置文件中 `timeline.provider`，未配置为 `hybrid` | 时间轴来源，可选 `asr-fuzzy`、`qwen3-forced`、`hybrid`。 |
@@ -290,7 +317,11 @@ uv run funasr-timeline \
   --llm-config configs/llm-siliconflow.toml
 ```
 
-LLM 会在一次请求中接收多段文本，并要求模型只输出“在原文中插入换行后的文本”，不输出 XML、JSON、解释、标题或 block id。多个输入 block 之间使用固定分隔行 `<<<BLOCK_SEPARATOR>>>`。请求默认设置 `enable_thinking = false`，程序只解析最终 `message.content`，不读取或回退到推理字段。LLM 输出必须保留原文标点，同一 block 内所有输出行直接拼接后必须与对应 input block 原文完全一致；校验通过后，程序再从原稿切片生成最终分句文本，并按规则去掉分句两端的边界标点。prompt 会强调常规口播字幕优先控制在 4 到 12 个中文字符左右，每个分句去掉首尾边界标点后的中文字符硬上限为 14 个；英文、数字、标点符号不计入长度。超过上限会作为 `segment_too_long` 校验失败进入 LLM 反馈修复流程，要求模型按意群边界、自然停顿、并列枚举、动作切换或软断点继续拆分。品牌、商品名、权益短语、链接引导、数字单位、英文型号和 CTA 表达允许适当更长，但仍需遵守 14 个中文字符上限，并尽量避免拆坏关键词。LLM 新增空格、删掉标点、改写数字品牌词、漏掉正文或输出过长分句都会校验失败。校验失败会直接报错，不自动回退到其他分句器。完整流程和独立分句会在输出目录写出 `llm_segmentation_diagnostics.json`，包含请求 block、原始响应、解析后的 segments 和失败时的覆盖诊断。`[[NO_SPLIT]]...[[/NO_SPLIT]]` 保护段由代码强制整体保留，不依赖模型遵守。
+程序会为每个预处理后的 block 创建一个独立 LLM 请求，并以 block 数量作为并发数同时发送；每个请求只包含一个 block，因此不依赖模型复述 block id 或输出跨 block 分隔符。请求默认设置 `enable_thinking = false`，程序只解析最终 `message.content`，不读取或回退到推理字段。调用模型前，程序会先移除保护段并把标记两侧设为强制 block 边界；紧邻标记的外侧边界标点从 LLM 视图中裁掉，但原稿 offset 保持不变。
+
+每个 block 独立执行内容覆盖和长度校验。覆盖校验会分别删除原文与模型结果中的标点、空格、换行和其他分隔符，并对剩余字母、中文和数字进行 Unicode 归一化后比较。因此模型在 `iPhone15`、`500ml` 或数字单位周围新增空格可以通过校验，但不能漏字、改字或改变数字。校验通过后，程序不会直接采用模型文本，而是根据内容字符顺序定位回原稿 offset，从原稿切片生成最终分句，再去掉分句两端的边界标点并插回保护段；模型新增的空格和标点不会进入最终字幕。
+
+prompt 会强调常规口播字幕的折算长度优先控制在 4 到 8 个汉字，硬上限为 10；汉字计 1，英文和数字每两个计 1，标点符号不计。请求异常、响应解析错误和内容校验错误均按 block 独立重试；通过校验的 block 不参与后续反馈。重试耗尽后默认记录 error 日志，并只把失败 block 交给 `--llm-fallback-segmenter`（默认 `hanlp`），成功 block 仍采用 LLM 结果。`--llm-raise-on-error` 可关闭 fallback 并直接抛错。完整流程和独立分句会在输出目录写出 `llm_segmentation_diagnostics.json`，包含每个 block 的请求、重试、失败原因和最终策略。`manuscript_segments.json` 的 `segmenter` 与 `source_block_id` 可用于后续 telemetry。`[[NO_SPLIT]]...[[/NO_SPLIT]]` 保护段由代码强制整体保留，不依赖模型遵守。
 
 ## 匹配和时间轴规则
 
@@ -371,6 +402,8 @@ ASR token 级时间轴。
 - `paragraph_index`：段落序号。
 - `char_start` / `char_end`：在当前用于匹配的稿件文本中的半开区间。
 - `boundary`：边界来源，常见值为 `punctuation`、`paragraph`、`protected`、`editable`。
+- `segmenter`：实际生成该句的分句器；LLM 失败 block 会显示 fallback 分句器。
+- `source_block_id`：LLM 编排对应的 `block-N`，非 LLM 流程为 `null`。
 - `normalized_text`：用于匹配的归一化文本。
 - `normalized_start` / `normalized_end`：在归一化稿件全文中的半开区间。
 
@@ -447,6 +480,13 @@ hybrid 分析数据。
 - 时间格式为 `HH:MM:SS,mmm`。
 - 字幕正文使用 `sentence_timeline.json` 中的 `text`。
 - 缺失时间或非法时间范围的句子不会渲染。
+- 默认填充不超过 67ms 的相邻字幕空隙，避免字幕短暂消失形成空白闪轴。
+- 默认把短于 200ms 的字幕向相邻空闲时间延长；不会移动其他字幕、合并文本或制造重叠。
+- 闪轴处理在首尾音频对齐后执行，并且只改变 SRT 渲染副本，不回写 `sentence_timeline.json`。
+
+### `subtitle_render_report.json`
+
+记录渲染后处理配置、空白闪轴填充、短字幕延长，以及因相邻时间空间不足而未达到最短时长的 cue。`source_index` 对应 `sentence_timeline.json` 中的句子 `index`。
 
 ### `alignment_report.json`
 
@@ -495,6 +535,15 @@ set +a
 
 uv run pytest tests/e2e/test_jianying_smartsplit_demo.py -q
 ```
+
+需要观察长链路实时日志时使用 `-s`：
+
+```bash
+uv run pytest tests/e2e/test_jianying_smartsplit_demo.py -s
+```
+
+测试中的 ffmpeg 与 `funasr_timeline.cli` 子进程会把 stdout/stderr 实时透传到当前
+pytest 终端，同时继续把完整逐行输出保存在 `e2e_diagnostics.json` 或失败诊断中。
 
 真实测试环境变量：
 

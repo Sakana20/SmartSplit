@@ -7,7 +7,7 @@ import re
 import tomllib
 import unicodedata
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,15 @@ import httpx
 from jinja2 import Template
 from loguru import logger
 
-from funasr_timeline.segmentation.base import SegmentationResult, SentenceSegment
+from funasr_timeline.segmentation.base import (
+    SegmentationResult,
+    SentenceSegment,
+    SentenceSegmenter,
+)
+from funasr_timeline.segmentation.length import (
+    weighted_content_half_units,
+    weighted_content_length,
+)
 from funasr_timeline.segmentation.protection import (
     TextBlock,
     append_protected_segment,
@@ -23,9 +31,8 @@ from funasr_timeline.segmentation.protection import (
 )
 
 DEFAULT_LLM_CONFIG_PATH = Path("configs/llm-siliconflow.toml")
-_BLOCK_SEPARATOR = "<<<BLOCK_SEPARATOR>>>"
-_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS = 12
-_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS = 14
+_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS = 8
+_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +77,8 @@ class _LlmAttempt:
     prompt: str
     content: str
     parsed: dict[str, tuple[str, ...]]
+    requested_block_ids: tuple[str, ...]
+    accepted_block_ids: tuple[str, ...]
     error: dict[str, Any] | None
 
 
@@ -80,6 +89,7 @@ class _LlmSegmentationResponse:
     parsed: dict[str, tuple[str, ...]]
     finish_reason: object
     attempts: tuple[_LlmAttempt, ...] = ()
+    failures: dict[str, dict[str, Any]] | None = None
 
 
 class LlmSegmentLocationError(ValueError):
@@ -91,8 +101,22 @@ class LlmSegmentLocationError(ValueError):
 class LlmSentenceSegmenter:
     name = "llm"
 
-    def __init__(self, config: LlmSegmentationConfig) -> None:
+    def __init__(
+        self,
+        config: LlmSegmentationConfig,
+        *,
+        fallback_segmenter: SentenceSegmenter | None = None,
+        raise_on_error: bool = False,
+    ) -> None:
         self.config = config
+        if fallback_segmenter is None:
+            from funasr_timeline.segmentation.hanlp import HanlpSegmenter
+
+            fallback_segmenter = HanlpSegmenter()
+        if fallback_segmenter.name == self.name:
+            raise ValueError("LLM fallback 分句器不能仍为 llm")
+        self.fallback_segmenter = fallback_segmenter
+        self.raise_on_error = raise_on_error
 
     def segment(self, text: str) -> SegmentationResult:
         prepared_text, blocks = split_text_blocks(text)
@@ -104,13 +128,21 @@ class LlmSentenceSegmenter:
             if block.protected or not block.text.strip():
                 continue
 
+            prompt_text = _prepare_prompt_text(
+                block=block,
+                previous_block=blocks[index - 1] if index > 0 else None,
+                next_block=blocks[index + 1] if index + 1 < len(blocks) else None,
+            )
+            if not prompt_text:
+                continue
+
             block_id = f"block-{len(prompt_blocks)}"
             block_id_by_index[index] = block_id
             prompt_blocks.append(
                 _PromptBlock(
                     block_id=block_id,
                     paragraph_index=block.paragraph_index,
-                    text=block.text,
+                    text=prompt_text,
                 )
             )
 
@@ -149,6 +181,7 @@ class LlmSentenceSegmenter:
         )
 
         segments: list[SentenceSegment] = []
+        block_strategies: dict[str, str] = {}
 
         try:
             for index, block in enumerate(blocks):
@@ -159,12 +192,23 @@ class LlmSentenceSegmenter:
                 if not block.text.strip():
                     continue
 
-                block_id = block_id_by_index[index]
+                located_block_id = block_id_by_index.get(index)
+                if located_block_id is None:
+                    continue
+
+                if response.failures and located_block_id in response.failures:
+                    fallback_segments = self._fallback_block(
+                        block=block,
+                        block_id=located_block_id,
+                    )
+                    segments.extend(fallback_segments)
+                    block_strategies[located_block_id] = self.fallback_segmenter.name
+                    continue
 
                 for char_start, char_end, segment_text in _locate_segments_in_block(
                     block=block,
-                    block_id=block_id,
-                    segment_texts=response.parsed.get(block_id, ()),
+                    block_id=located_block_id,
+                    segment_texts=response.parsed.get(located_block_id, ()),
                 ):
                     segments.append(
                         SentenceSegment(
@@ -174,8 +218,11 @@ class LlmSentenceSegmenter:
                             char_start=char_start,
                             char_end=char_end,
                             boundary="llm",
+                            segmenter=self.name,
+                            source_block_id=located_block_id,
                         )
                     )
+                block_strategies[located_block_id] = self.name
 
         except LlmSegmentLocationError as error:
             self._write_diagnostics(
@@ -186,16 +233,41 @@ class LlmSentenceSegmenter:
             )
             raise
 
+        segments = [replace(segment, index=index) for index, segment in enumerate(segments)]
         logger.debug("LLM 分句完成：segments={}", len(segments))
 
         self._write_diagnostics(
-            status="validated",
+            status="validated_with_fallback" if response.failures else "validated",
             prompt_blocks=prompt_blocks,
             response=response,
-            validation={"segment_count": len(segments)},
+            validation={
+                "segment_count": len(segments),
+                "block_strategies": block_strategies,
+            },
         )
 
         return SegmentationResult(text=prepared_text, segments=segments)
+
+    def _fallback_block(self, *, block: TextBlock, block_id: str) -> list[SentenceSegment]:
+        logger.debug(
+            "LLM 分句 block={} 重试耗尽，fallback 到 {}",
+            block_id,
+            self.fallback_segmenter.name,
+        )
+        fallback = self.fallback_segmenter.segment(block.text)
+        return [
+            SentenceSegment(
+                index=0,
+                text=segment.text,
+                paragraph_index=block.paragraph_index,
+                char_start=block.start + segment.char_start,
+                char_end=block.start + segment.char_end,
+                boundary=segment.boundary,
+                segmenter=self.fallback_segmenter.name,
+                source_block_id=block_id,
+            )
+            for segment in fallback.segments
+        ]
 
     async def _segment_blocks(self, blocks: list[_PromptBlock]) -> _LlmSegmentationResponse:
         endpoint = _chat_completions_url(self.config.base_url)
@@ -204,108 +276,187 @@ class LlmSentenceSegmenter:
             "Content-Type": "application/json",
         }
 
+        async with httpx.AsyncClient(timeout=httpx.Timeout(self.config.timeout_seconds)) as client:
+            results = await asyncio.gather(
+                *(
+                    self._segment_single_block(
+                        client=client,
+                        endpoint=endpoint,
+                        headers=headers,
+                        block=block,
+                    )
+                    for block in blocks
+                ),
+                return_exceptions=True,
+            )
+
+        parsed: dict[str, tuple[str, ...]] = {}
+        payloads: dict[str, Any] = {}
+        finish_reasons: dict[str, object] = {}
+        attempts: list[_LlmAttempt] = []
+        failures: dict[str, dict[str, Any]] = {}
+
+        for block, result in zip(blocks, results, strict=True):
+            if isinstance(result, BaseException):
+                if not isinstance(result, LlmSegmentLocationError):
+                    raise result
+                failures[block.block_id] = result.diagnostics
+                continue
+
+            parsed.update(result.parsed)
+            payloads[block.block_id] = result.payload
+            finish_reasons[block.block_id] = result.finish_reason
+            attempts.extend(result.attempts)
+
+        if failures and self.raise_on_error:
+            failed_block_ids = [block.block_id for block in blocks if block.block_id in failures]
+            accepted_block_ids = [block.block_id for block in blocks if block.block_id in parsed]
+            failed_attempts = [
+                attempt
+                for block in blocks
+                if block.block_id in failures
+                for attempt in failures[block.block_id].get("attempts", [])
+            ]
+            successful_attempts = [_attempt_as_dict(attempt) for attempt in attempts]
+            raise LlmSegmentLocationError(
+                "LLM 分句重试后仍未通过校验：存在失败 block",
+                {
+                    "reason": "retry_exhausted",
+                    "max_retries": self.config.max_retries,
+                    "last_error": (
+                        failures[failed_block_ids[0]].get("last_error")
+                        if len(failed_block_ids) == 1
+                        else {
+                            block_id: failures[block_id].get("last_error")
+                            for block_id in failed_block_ids
+                        }
+                    ),
+                    "accepted": {
+                        block_id: list(parsed[block_id]) for block_id in accepted_block_ids
+                    },
+                    "pending_block_ids": failed_block_ids,
+                    "attempts": successful_attempts + failed_attempts,
+                    "block_failures": failures,
+                },
+            )
+
+        if failures:
+            for block in blocks:
+                if block.block_id in failures:
+                    failure = failures[block.block_id]
+                    logger.error(
+                        "LLM 分句 block={} 重试耗尽，将 fallback 到 {}：{}",
+                        block.block_id,
+                        self.fallback_segmenter.name,
+                        failure.get("last_error", {}).get("message", "unknown error"),
+                    )
+
+        return _LlmSegmentationResponse(
+            content=_render_parsed_blocks(blocks, parsed),
+            payload={"blocks": payloads},
+            parsed=parsed,
+            finish_reason=finish_reasons,
+            attempts=tuple(attempts),
+            failures=failures or None,
+        )
+
+    async def _segment_single_block(
+        self,
+        *,
+        client: httpx.AsyncClient,
+        endpoint: str,
+        headers: dict[str, str],
+        block: _PromptBlock,
+    ) -> _LlmSegmentationResponse:
         last_error: dict[str, Any] | None = None
         last_content = ""
-        last_payload: dict[str, Any] = {}
-        last_finish_reason: object = None
         attempts: list[_LlmAttempt] = []
-
         max_attempts = max(1, self.config.max_retries + 1)
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(self.config.timeout_seconds)) as client:
-            for attempt in range(1, max_attempts + 1):
-                prompt = _render_prompt(
-                    blocks=blocks,
-                    previous_error=last_error,
-                    previous_output=None,
-                )
-
-                logger.debug("LLM 分句第 {} 次输入 prompt：\n{}", attempt, prompt)
-
-                payload = {
-                    "model": self.config.model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": self.config.temperature,
-                    "max_tokens": self.config.max_tokens,
-                    "enable_thinking": self.config.enable_thinking,
-                }
-
+        for attempt in range(1, max_attempts + 1):
+            prompt = _render_prompt(blocks=[block], previous_error=last_error)
+            logger.debug(
+                "LLM 分句 block={} 第 {} 次输入 prompt：\n{}",
+                block.block_id,
+                attempt,
+                prompt,
+            )
+            payload = {
+                "model": self.config.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": self.config.temperature,
+                "max_tokens": self.config.max_tokens,
+                "enable_thinking": self.config.enable_thinking,
+            }
+            parsed: dict[str, tuple[str, ...]] = {}
+            try:
                 response = await client.post(endpoint, headers=headers, json=payload)
                 response.raise_for_status()
-
-                last_payload = response.json()
-                last_finish_reason = _first_choice_finish_reason(last_payload)
-                last_content = _extract_message_content(last_payload)
-
-                logger.debug("LLM 分句第 {} 次原始输出：\n{}", attempt, last_content)
-
-                parsed: dict[str, tuple[str, ...]] = {}
-
-                try:
-                    parsed = _parse_plaintext_segments(last_content, blocks)
-
-                    logger.debug(
-                        "LLM 分句第 {} 次解析结果：\n{}",
-                        attempt,
-                        json.dumps(
-                            {key: list(value) for key, value in parsed.items()},
-                            ensure_ascii=False,
-                            indent=2,
-                        ),
-                    )
-
-                    _validate_parsed_segments(blocks, parsed)
-
-                    logger.debug("LLM 分句第 {} 次校验通过", attempt)
-
-                    attempts.append(
-                        _LlmAttempt(
-                            attempt=attempt,
-                            prompt=prompt,
-                            content=last_content,
-                            parsed=parsed,
-                            error=None,
-                        )
-                    )
-
-                    return _LlmSegmentationResponse(
+                response_payload = response.json()
+                finish_reason = _first_choice_finish_reason(response_payload)
+                last_content = _extract_message_content(response_payload)
+                logger.debug(
+                    "LLM 分句 block={} 第 {} 次原始输出：\n{}",
+                    block.block_id,
+                    attempt,
+                    last_content,
+                )
+                parsed = _parse_plaintext_segments(last_content, [block])
+                _validate_parsed_block(block, parsed[block.block_id])
+            except Exception as exc:
+                last_error = _error_to_retry_payload(
+                    exc=exc,
+                    blocks=[block],
+                    previous_output=last_content,
+                )
+                logger.warning(
+                    "LLM 分句 block={} 第 {} 次失败：\n{}",
+                    block.block_id,
+                    attempt,
+                    json.dumps(last_error, ensure_ascii=False, indent=2),
+                )
+                attempts.append(
+                    _LlmAttempt(
+                        attempt=attempt,
+                        prompt=prompt,
                         content=last_content,
-                        payload=last_payload,
                         parsed=parsed,
-                        finish_reason=last_finish_reason,
-                        attempts=tuple(attempts),
+                        requested_block_ids=(block.block_id,),
+                        accepted_block_ids=(),
+                        error=last_error,
                     )
+                )
+                continue
 
-                except Exception as exc:
-                    last_error = _error_to_retry_payload(
-                        exc=exc,
-                        blocks=blocks,
-                        previous_output=last_content,
-                    )
-
-                    logger.warning(
-                        "LLM 分句第 {} 次失败：\n{}",
-                        attempt,
-                        json.dumps(last_error, ensure_ascii=False, indent=2),
-                    )
-
-                    attempts.append(
-                        _LlmAttempt(
-                            attempt=attempt,
-                            prompt=prompt,
-                            content=last_content,
-                            parsed=parsed,
-                            error=last_error,
-                        )
-                    )
+            logger.debug("LLM 分句 block={} 第 {} 次校验通过", block.block_id, attempt)
+            attempts.append(
+                _LlmAttempt(
+                    attempt=attempt,
+                    prompt=prompt,
+                    content=last_content,
+                    parsed=parsed,
+                    requested_block_ids=(block.block_id,),
+                    accepted_block_ids=(block.block_id,),
+                    error=None,
+                )
+            )
+            return _LlmSegmentationResponse(
+                content=last_content,
+                payload=response_payload,
+                parsed=parsed,
+                finish_reason=finish_reason,
+                attempts=tuple(attempts),
+            )
 
         raise LlmSegmentLocationError(
-            "LLM 分句重试后仍未通过校验",
+            f"LLM 分句 block={block.block_id} 重试后仍未通过校验",
             {
                 "reason": "retry_exhausted",
                 "max_retries": self.config.max_retries,
                 "last_error": last_error,
                 "last_output": last_content,
+                "pending_block_ids": [block.block_id],
+                "attempts": [_attempt_as_dict(item) for item in attempts],
             },
         )
 
@@ -322,7 +473,9 @@ class LlmSentenceSegmenter:
                 enable_thinking=self.config.enable_thinking,
                 diagnostics_path=diagnostics_path,
                 max_retries=self.config.max_retries,
-            )
+            ),
+            fallback_segmenter=self.fallback_segmenter,
+            raise_on_error=self.raise_on_error,
         )
 
     def _write_diagnostics(
@@ -347,8 +500,11 @@ class LlmSentenceSegmenter:
                 "max_tokens": self.config.max_tokens,
                 "enable_thinking": self.config.enable_thinking,
                 "max_retries": self.config.max_retries,
-                "segment_target_max_chinese_chars": (_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS),
-                "segment_hard_max_chinese_chars": (_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS),
+                "raise_on_error": self.raise_on_error,
+                "fallback_segmenter": self.fallback_segmenter.name,
+                "segment_target_max_content_length": (_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS),
+                "segment_hard_max_content_length": (_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS),
+                "english_digit_weight": 0.5,
             },
             "request": {
                 "block_count": len(prompt_blocks),
@@ -366,16 +522,8 @@ class LlmSentenceSegmenter:
                 "content": response.content,
             },
             "parsed": {key: list(value) for key, value in response.parsed.items()},
-            "attempts": [
-                {
-                    "attempt": attempt.attempt,
-                    "prompt": attempt.prompt,
-                    "content": attempt.content,
-                    "parsed": {key: list(value) for key, value in attempt.parsed.items()},
-                    "error": attempt.error,
-                }
-                for attempt in response.attempts
-            ],
+            "attempts": _diagnostic_attempts(response),
+            "failures": response.failures or {},
             "validation": validation,
         }
 
@@ -384,6 +532,31 @@ class LlmSentenceSegmenter:
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+
+def _attempt_as_dict(attempt: _LlmAttempt) -> dict[str, Any]:
+    return {
+        "attempt": attempt.attempt,
+        "prompt": attempt.prompt,
+        "content": attempt.content,
+        "parsed": {key: list(value) for key, value in attempt.parsed.items()},
+        "requested_block_ids": list(attempt.requested_block_ids),
+        "accepted_block_ids": list(attempt.accepted_block_ids),
+        "error": attempt.error,
+    }
+
+
+def _diagnostic_attempts(response: _LlmSegmentationResponse) -> list[dict[str, Any]]:
+    attempts = [_attempt_as_dict(attempt) for attempt in response.attempts]
+    if response.failures:
+        for failure in response.failures.values():
+            attempts.extend(failure.get("attempts", []))
+
+    def sort_key(item: dict[str, Any]) -> tuple[str, int]:
+        block_ids = item.get("requested_block_ids") or [""]
+        return str(block_ids[0]), int(item.get("attempt", 0))
+
+    return sorted(attempts, key=sort_key)
 
 
 def load_llm_segmentation_config(path: Path) -> LlmSegmentationConfig:
@@ -491,25 +664,13 @@ def _parse_plaintext_segments(
     content: str,
     blocks: list[_PromptBlock],
 ) -> dict[str, tuple[str, ...]]:
+    if len(blocks) != 1:
+        raise ValueError("LLM 单 block 解析器每次必须且只能接收一个 block")
+
     text = _strip_code_fence(content)
-
-    chunks = [text] if len(blocks) == 1 else text.split(_BLOCK_SEPARATOR)
-
-    if len(chunks) != len(blocks):
-        raise LlmSegmentLocationError(
-            "LLM 输出 block 数量不匹配",
-            {
-                "reason": "block_count_mismatch",
-                "expected_count": len(blocks),
-                "actual_count": len(chunks),
-                "separator": _BLOCK_SEPARATOR,
-                "content": content,
-            },
-        )
-
     parsed: dict[str, tuple[str, ...]] = {}
 
-    for block, chunk in zip(blocks, chunks, strict=True):
+    for block, chunk in zip(blocks, [text], strict=True):
         normalized_chunk = chunk.strip("\n")
         segments = tuple(
             cleaned for line in normalized_chunk.split("\n") if (cleaned := line.strip()) != ""
@@ -563,49 +724,70 @@ def _validate_parsed_segments(
             },
         )
 
-    block_by_id = {block.block_id: block for block in blocks}
+    for block in blocks:
+        _validate_parsed_block(block, parsed[block.block_id])
 
-    for block_id, segment_texts in parsed.items():
-        block = block_by_id[block_id]
-        consumed_text = "".join(segment_texts)
 
-        if consumed_text != block.text:
+def _validate_parsed_block(
+    block: _PromptBlock,
+    segment_texts: tuple[str, ...],
+) -> None:
+    block_id = block.block_id
+    consumed_text = "".join(segment_texts)
+    original_core = _content_core(block.text)
+    consumed_core = _content_core(consumed_text)
+
+    if consumed_core != original_core:
+        raise LlmSegmentLocationError(
+            f"LLM 分句结果未完整覆盖原文：block={block_id}",
+            {
+                "reason": "normalized_content_not_equal",
+                "failed_block_id": block_id,
+                "original_text": block.text,
+                "consumed_text": consumed_text,
+                "original_core": original_core,
+                "consumed_core": consumed_core,
+                "missing_hint": _first_difference_hint(original_core, consumed_core),
+                "segments": list(segment_texts),
+            },
+        )
+
+    for segment_index, segment_text in enumerate(segment_texts):
+        content_text = _strip_segment_boundary_noise(segment_text)
+        content_half_units = weighted_content_half_units(content_text)
+        content_length = weighted_content_length(content_text)
+
+        if content_half_units > _LLM_SEGMENT_HARD_MAX_CONTENT_CHARS * 2:
             raise LlmSegmentLocationError(
-                f"LLM 分句结果未完整覆盖原文：block={block_id}",
+                f"LLM 分句结果超过长度上限：block={block_id} "
+                f"segment_index={segment_index} content_length={content_length:g}",
                 {
-                    "reason": "text_not_equal",
+                    "reason": "segment_too_long",
                     "failed_block_id": block_id,
-                    "original_text": block.text,
-                    "consumed_text": consumed_text,
-                    "missing_hint": _first_difference_hint(block.text, consumed_text),
+                    "segment_index": segment_index,
+                    "segment_text": segment_text,
+                    "content_text": content_text,
+                    "content_half_units": content_half_units,
+                    "content_length": content_length,
+                    "target_max_content_length": (_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS),
+                    "hard_max_content_length": _LLM_SEGMENT_HARD_MAX_CONTENT_CHARS,
+                    "english_digit_weight": 0.5,
+                    "repair_hint": (
+                        "该分句过长，请在逗号、顿号、句号、分号、意群边界、自然停顿、并列枚举、"
+                        "动作切换或软断点处继续拆分。"
+                    ),
                     "segments": list(segment_texts),
                 },
             )
 
-        for segment_index, segment_text in enumerate(segment_texts):
-            content_text = _strip_segment_boundary_noise(segment_text)
-            chinese_char_count = _count_chinese_chars(content_text)
 
-            if chinese_char_count > _LLM_SEGMENT_HARD_MAX_CONTENT_CHARS:
-                raise LlmSegmentLocationError(
-                    f"LLM 分句结果超过长度上限：block={block_id} "
-                    f"segment_index={segment_index} chinese_chars={chinese_char_count}",
-                    {
-                        "reason": "segment_too_long",
-                        "failed_block_id": block_id,
-                        "segment_index": segment_index,
-                        "segment_text": segment_text,
-                        "content_text": content_text,
-                        "chinese_char_count": chinese_char_count,
-                        "target_max_chinese_chars": (_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS),
-                        "hard_max_chinese_chars": _LLM_SEGMENT_HARD_MAX_CONTENT_CHARS,
-                        "repair_hint": (
-                            "该分句过长，请在意群边界、自然停顿、并列枚举、"
-                            "动作切换或软断点处继续拆分。"
-                        ),
-                        "segments": list(segment_texts),
-                    },
-                )
+def _render_parsed_blocks(
+    blocks: list[_PromptBlock],
+    parsed: dict[str, tuple[str, ...]],
+) -> str:
+    return "\n\n".join(
+        "\n".join(parsed[block.block_id]) for block in blocks if block.block_id in parsed
+    )
 
 
 def _locate_segments_in_block(
@@ -641,6 +823,27 @@ def _locate_segments_in_block(
         )
 
     return located
+
+
+def _prepare_prompt_text(
+    *,
+    block: TextBlock,
+    previous_block: TextBlock | None,
+    next_block: TextBlock | None,
+) -> str:
+    """Build the LLM view while keeping protected-marker seams as hard boundaries."""
+    start = 0
+    end = len(block.text)
+
+    if previous_block is not None and previous_block.protected:
+        while start < end and not _is_content_char(block.text[start]):
+            start += 1
+
+    if next_block is not None and next_block.protected:
+        while end > start and not _is_content_char(block.text[end - 1]):
+            end -= 1
+
+    return block.text[start:end]
 
 
 def _locate_relaxed_spans(
@@ -776,14 +979,6 @@ def _content_core(text: str) -> str:
     return "".join(_normalize_content_char(char) for char in text if _is_content_char(char))
 
 
-def _count_chinese_chars(text: str) -> int:
-    return sum(1 for char in text if _is_cjk_char(char))
-
-
-def _is_cjk_char(char: str) -> bool:
-    return "\u4e00" <= char <= "\u9fff"
-
-
 def _is_content_char(char: str) -> bool:
     category = unicodedata.category(char)
     return category[0] in {"L", "N"}
@@ -820,12 +1015,12 @@ def _error_to_retry_payload(
         "previous_output": previous_output,
         "repair_instruction": (
             "请重新输出完整结果。只需要表达分句换行。"
-            "只允许插入分句边界，不允许新增、删除、替换或改写任何字符。"
-            "标点符号也属于原文字符，必须保留在输出行中。"
-            f"每个分句去掉边界标点后的中文字符必须不超过 "
-            f"{_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS} 个；"
-            "英文、数字、标点符号不计入长度。过长时按意群边界继续拆分。"
-            f"多个 block 之间必须使用 {_BLOCK_SEPARATOR} 单独一行分隔。"
+            "只允许插入分句边界，不允许新增、删除、替换或改写任何内容字符。"
+            "标点和空格将由程序按原稿定位回填，但不要改写中文、英文或数字。"
+            f"每个分句去掉边界标点后的折算长度必须不超过 "
+            f"{_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS} 个汉字；"
+            "汉字计 1，英文和数字每两个计 1，标点符号不计。"
+            "过长时按逗号、顿号、句号、分号、意群边界继续拆分。"
         ),
     }
 
@@ -868,9 +1063,8 @@ def _render_prompt(
         previous_error=previous_error,
         previous_error_json=previous_error_json,
         previous_output=previous_output,
-        block_separator=_BLOCK_SEPARATOR,
-        target_max_chinese_chars=_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS,
-        hard_max_chinese_chars=_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS,
+        target_max_content_length=_LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS,
+        hard_max_content_length=_LLM_SEGMENT_HARD_MAX_CONTENT_CHARS,
     )
 
 
@@ -951,28 +1145,19 @@ _PROMPT_TEMPLATE = """你是一个中文短视频字幕分句助手。
 - 不要输出解释。
 - 只输出“在原文中插入换行后的文本”。
 - 每一行就是一个字幕分句。
-- 只允许插入分句边界，不允许新增、删除、替换、改写任何字符。
-- 标点符号也属于原文字符，必须保留在输出行中，用于后续完整性校对。
-- 每个 block 内所有输出行直接拼接后，必须与对应 input_block 原文完全一致。
-- 不要为了字幕观感在数字、英文、单位之间添加空格。
-- 不要遗漏中文、数字、英文、标点或原文中的空格。
-
-多 block 规则：
-- 每个 input_block 必须按输入顺序输出。
-- 不要输出 block id。
-- 不要输出标题。
-- 不要跨 block 合并。
-- 多个 block 之间必须使用这一行分隔：
-{{ block_separator }}
+- 只允许插入分句边界，不允许新增、删除、替换、改写中文、英文或数字。
+- 尽量保留原文标点和空格；程序会忽略标点与空格完成内容校验，再按原稿定位回填。
+- 所有输出行去掉标点、空格和分隔符后拼接，必须与 input_block 做同样处理后的内容一致。
+- 不要输出 block id、标题或额外说明。
 
 短视频字幕偏好：
 - 优先按口播自然停顿切分。
-- 常规口播字幕优先控制在 4 到 {{ target_max_chinese_chars }} 个中文字符左右。
-- 每个分句去掉首尾边界标点后，中文字符必须不超过 {{ hard_max_chinese_chars }} 个。
-- 英文、数字、标点符号不计入长度；只计算中文文字部分长度。
-- 如果某个分句超过 {{ hard_max_chinese_chars }} 个中文字符，必须按意群边界继续拆分。
+- 常规口播字幕的折算长度优先控制在 4 到 {{ target_max_content_length }} 个汉字左右。
+- 每个分句去掉首尾边界标点后，折算长度必须不超过 {{ hard_max_content_length }} 个汉字。
+- 汉字计 1，英文和数字每两个计 1，标点符号不计入长度。
+- 如果某个分句折算后超过 {{ hard_max_content_length }} 个汉字，必须按意群边界继续拆分。
 - 品牌、商品名、权益短语、链接引导、数字单位、英文型号可以适当更长。
-- 这些较长片段仍需遵守 {{ hard_max_chinese_chars }} 个中文字符上限，不要为了字数拆坏关键词。
+- 这些较长片段仍需遵守 {{ hard_max_content_length }} 个汉字的折算长度上限，不要为了字数拆坏关键词。
 - 可以把过长分句按“主语/动作/结果”“条件/动作”“商品/卖点”“权益/CTA”等意群边界继续拆开。
 - 优先在逗号、顿号、句号、分号、语义转折、并列枚举、动作切换处断开。
 - 枚举商品、规格、场景时，可以按单个枚举项拆分。
@@ -1014,14 +1199,12 @@ Few-shot 示例：
 修复要求：
 - 不要解释。
 - 只重新选择换行位置。
-- 只允许插入分句边界，不允许新增、删除、替换、改写任何字符。
-- 标点符号也属于原文字符，必须保留在输出行中。
-- 每个 block 内所有输出行直接拼接后，必须与对应 input_block 原文完全一致。
-- 不要为了字幕观感在数字、英文、单位之间添加空格。
-- 每个分句去掉首尾边界标点后，中文字符必须不超过 {{ hard_max_chinese_chars }} 个。
-- 英文、数字、标点符号不计入长度。
+- 只允许插入分句边界，不允许新增、删除、替换、改写中文、英文或数字。
+- 标点和空格将由程序按原稿定位回填。
+- 所有输出行去掉标点、空格和分隔符后拼接，必须与 input_block 做同样处理后的内容一致。
+- 每个分句去掉首尾边界标点后，折算长度必须不超过 {{ hard_max_content_length }} 个汉字。
+- 汉字计 1，英文和数字每两个计 1，标点符号不计入长度。
 - 过长时按意群边界继续拆分。
-- 如果有多个 block，必须用 {{ block_separator }} 单独一行分隔。
 {% endif %}
 
 现在处理下面的输入。只输出加换行后的文本。

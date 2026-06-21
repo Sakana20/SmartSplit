@@ -6,53 +6,70 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import pytest
 
+from funasr_timeline.segmentation import (
+    NO_SPLIT_END,
+    NO_SPLIT_START,
+    remove_no_split_markers,
+)
+from funasr_timeline.segmentation.hanlp import PHRASE_BOUNDARIES
+from funasr_timeline.segmentation.length import weighted_content_half_units
+
 DEMO_TEXT = (
     "天气越来越热，出门走两步就容易出汗。无论是通勤赶地铁还是周末逛街，"
-    "带上一个便携手持风扇都会舒服很多。淘宝闪购正在发放最高12元无门槛红包，"
+    "带上一个便携手持风扇都会舒服很多。"
+    f"{NO_SPLIT_START}淘宝闪购正在发放最高12元无门槛红包{NO_SPLIT_END}，"
     "点击视频下方链接即可领取。\n\n"
-
     "很多学生放学路上最怕太阳暴晒，一个小巧的便携手持风扇放进书包就能随身带。"
-    "课间、排队或者等公交的时候拿出来吹一吹，体验会好不少。淘宝闪购红包活动进行中，"
-    "最高12元无门槛红包别忘了领取。\n\n"
-
+    "课间、排队或者等公交的时候拿出来吹一吹，体验会好不少。"
+    f"{NO_SPLIT_START}淘宝闪购红包活动进行中，最高12元无门槛红包别忘了领取"
+    f"{NO_SPLIT_END}。\n\n"
     "如果你经常外出拍照、旅游或者看演出，手持风扇真的算是夏季实用小物。"
-    "轻便不占地方，长时间使用也方便。淘宝闪购限时补贴中，"
+    "轻便不占地方，长时间使用也方便。"
+    f"{NO_SPLIT_START}淘宝闪购限时补贴中{NO_SPLIT_END}，"
     "点击下方链接看看有没有适合你的款式。\n\n"
-
     "办公室空调开得不够足的时候，不少人都会准备一个随身风扇。"
-    "桌面能放，出门能带，午休时也能派上用场。现在淘宝闪购可领最高12元无门槛红包，"
+    "桌面能放，出门能带，午休时也能派上用场。"
+    f"{NO_SPLIT_START}现在淘宝闪购可领最高12元无门槛红包{NO_SPLIT_END}，"
     "点击视频下方链接直接了解。\n\n"
-
     "夏季出门最怕闷热难受，一个便携手持风扇随时都能带来凉爽体验。"
-    "无论是在公园散步还是排队等餐，都能轻松使用。淘宝闪购活动期间，"
-    "最高12元无门槛红包正在发放。\n\n"
-
-    "打开视频下方链接，先领取最高12元无门槛红包，再看看附近门店有哪些优惠。"
+    "无论是在公园散步还是排队等餐，都能轻松使用。"
+    f"{NO_SPLIT_START}淘宝闪购活动期间，最高12元无门槛红包正在发放"
+    f"{NO_SPLIT_END}。\n\n"
+    "打开视频下方链接，"
+    f"{NO_SPLIT_START}先领取最高12元无门槛红包{NO_SPLIT_END}，"
+    "再看看附近门店有哪些优惠。"
     "卷纸、雨伞、洗脸巾和水果都有不同力度补贴，"
     "部分商品支持半小时左右送达。\n\n"
-
     "最近需要购买iPhone15钢化膜、500ml饮料、2kg面粉、"
     "3.5L食用油或者99.9%除菌喷雾的话，可以顺便逛逛淘宝闪购。"
     "页面还有￥15.8优惠券、USD 5.99好物专区以及No.1热销商品推荐。\n\n"
-
     "夏季水果进入上市高峰期，荔枝、水蜜桃、杨梅和葡萄都很受欢迎。"
     "不少门店支持即时配送，下单后最快二十多分钟送到，"
     "对于临时采购来说会比较方便。\n\n"
-
     "活动期间还有各种优惠玩法，比如满29减8、满49减15、"
     "第二件半价以及3件8折等福利。搭配无门槛红包一起使用，"
     "买日用品或者零食都能省下一部分开销。\n\n"
-
     "记住几个常见入口：淘宝闪购、天猫超市、饿了么、视频下方链接、"
     "官方补贴、今日特价、限时秒杀和满减活动。下单前先领券，"
     "很多时候都能享受到更划算的价格。\n"
 )
+
+PROTECTED_DEMO_TEXTS = (
+    "淘宝闪购正在发放最高12元无门槛红包",
+    "淘宝闪购红包活动进行中，最高12元无门槛红包别忘了领取",
+    "淘宝闪购限时补贴中",
+    "现在淘宝闪购可领最高12元无门槛红包",
+    "淘宝闪购活动期间，最高12元无门槛红包正在发放",
+    "先领取最高12元无门槛红包",
+)
+DEMO_SPEECH_TEXT = remove_no_split_markers(DEMO_TEXT)
 
 VOICE_ID = "BV005_streaming"
 E2E_ENV_PATH = Path("configs/jianying-e2e.env")
@@ -72,6 +89,43 @@ class CommandExecutionError(RuntimeError):
     def __init__(self, payload: dict[str, Any]) -> None:
         super().__init__(json.dumps(payload, ensure_ascii=False, indent=2))
         self.payload = payload
+
+
+def test_run_command_streams_and_retains_subprocess_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = _run_command(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "print('visible stdout', flush=True); "
+                "print('visible stderr', file=sys.stderr, flush=True)"
+            ),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert "visible stdout" in captured.out
+    assert "visible stderr" in captured.err
+    assert result["stdout_tail"] == ["visible stdout"]
+    assert result["stderr_tail"] == ["visible stderr"]
+
+
+def test_demo_input_contains_protection_markers_before_real_e2e(tmp_path: Path) -> None:
+    assert DEMO_TEXT.count(NO_SPLIT_START) == len(PROTECTED_DEMO_TEXTS)
+    assert DEMO_TEXT.count(NO_SPLIT_END) == len(PROTECTED_DEMO_TEXTS)
+    assert all(
+        f"{NO_SPLIT_START}{text}{NO_SPLIT_END}" in DEMO_TEXT for text in PROTECTED_DEMO_TEXTS
+    )
+    assert NO_SPLIT_START not in DEMO_SPEECH_TEXT
+    assert NO_SPLIT_END not in DEMO_SPEECH_TEXT
+    assert all(text in DEMO_SPEECH_TEXT for text in PROTECTED_DEMO_TEXTS)
+
+    paths = _prepare_real_workspace(tmp_path, tmp_path / "draft")
+    manuscript_text = paths["manuscript"].read_text(encoding="utf-8")
+    assert manuscript_text == DEMO_TEXT.strip() + "\n"
 
 
 @pytest.mark.e2e_real
@@ -115,7 +169,9 @@ def test_jianying_demo_llm_qwen3_funasr_writes_detailed_diagnostics(
             {
                 "mode": "real-jianying-tts",
                 "draft_name": settings.draft_name,
-                "text_chars": len(DEMO_TEXT.strip()),
+                "text_chars": len(DEMO_SPEECH_TEXT.strip()),
+                "manuscript_text_chars": len(DEMO_TEXT.strip()),
+                "protected_segment_count": len(PROTECTED_DEMO_TEXTS),
                 "tts": tts_meta,
                 "audio_conversion": conversion_meta,
                 "command": error.payload,
@@ -133,7 +189,9 @@ def test_jianying_demo_llm_qwen3_funasr_writes_detailed_diagnostics(
             "mode": "real-jianying-tts",
             "draft_name": settings.draft_name,
             "command": command_result,
-            "text_chars": len(DEMO_TEXT.strip()),
+            "text_chars": len(DEMO_SPEECH_TEXT.strip()),
+            "manuscript_text_chars": len(DEMO_TEXT.strip()),
+            "protected_segment_count": len(PROTECTED_DEMO_TEXTS),
             "tts": tts_meta,
             "audio_conversion": conversion_meta,
             "jianying": jianying_meta,
@@ -158,10 +216,23 @@ def test_jianying_demo_llm_qwen3_funasr_writes_detailed_diagnostics(
     assert telemetry["forced_unit_count"] > 100
     assert telemetry["asr_token_count"] > 100
     assert telemetry["forced_normalized_text_match"] is True
+    assert diagnostics["outputs"]["segmentation"]["protected_segment_count"] == len(
+        PROTECTED_DEMO_TEXTS
+    )
+    assert diagnostics["outputs"]["segmentation"]["protected_texts"] == list(PROTECTED_DEMO_TEXTS)
+    assert diagnostics["outputs"]["segmentation"]["overlong_nonprotected_segments"] == []
+    assert diagnostics["outputs"]["segmentation"]["hanlp_phrase_boundary_violations"] == []
+
+    timeline_texts = diagnostics["outputs"]["sentence_timeline"]["texts"]
+    assert all(text in timeline_texts for text in PROTECTED_DEMO_TEXTS)
+    llm_request_text = diagnostics["outputs"]["segmentation"]["llm_request_text"]
+    assert all(text not in llm_request_text for text in PROTECTED_DEMO_TEXTS)
 
 
 def _collect_timeline_diagnostics(timeline_dir: Path, context: dict[str, Any]) -> dict[str, Any]:
     sentence_timeline = _read_json(timeline_dir / "sentence_timeline.json")
+    manuscript_segments = _read_json(timeline_dir / "manuscript_segments.json")
+    llm_diagnostics = _read_json(timeline_dir / "llm_segmentation_diagnostics.json")
     telemetry = _read_json(timeline_dir / "telemetry.json")
     report = _read_json(timeline_dir / "alignment_report.json")
     srt_path = timeline_dir / "sentence_timeline.srt"
@@ -181,6 +252,37 @@ def _collect_timeline_diagnostics(timeline_dir: Path, context: dict[str, Any]) -
         for sentence in telemetry.get("sentences", [])
         if sentence.get("comparison", {}).get("end_delta_ms") is not None
     ]
+    protected_segments = [
+        segment for segment in manuscript_segments if segment.get("boundary") == "protected"
+    ]
+    hard_max_content_length = int(
+        llm_diagnostics.get("config", {}).get("segment_hard_max_content_length", 10)
+    )
+    overlong_nonprotected_segments = [
+        {
+            "index": segment.get("index"),
+            "text": segment.get("text"),
+            "segmenter": segment.get("segmenter"),
+            "source_block_id": segment.get("source_block_id"),
+            "content_length": weighted_content_half_units(str(segment.get("text", ""))) / 2,
+        }
+        for segment in manuscript_segments
+        if segment.get("boundary") != "protected"
+        and weighted_content_half_units(str(segment.get("text", ""))) > hard_max_content_length * 2
+    ]
+    hanlp_phrase_boundary_violations = [
+        {
+            "index": segment.get("index"),
+            "text": segment.get("text"),
+            "source_block_id": segment.get("source_block_id"),
+        }
+        for segment in manuscript_segments
+        if segment.get("segmenter") == "hanlp"
+        and set(str(segment.get("text", ""))) & PHRASE_BOUNDARIES
+    ]
+    llm_request_text = "\n".join(
+        str(block.get("text", "")) for block in llm_diagnostics.get("request", {}).get("blocks", [])
+    )
 
     return {
         "context": context,
@@ -195,6 +297,17 @@ def _collect_timeline_diagnostics(timeline_dir: Path, context: dict[str, Any]) -
                 if sentence_timeline
                 else None,
                 "last_end_ms": sentence_timeline[-1].get("end_ms") if sentence_timeline else None,
+                "texts": [item.get("text") for item in sentence_timeline],
+            },
+            "segmentation": {
+                "manuscript_segments_path": str(timeline_dir / "manuscript_segments.json"),
+                "llm_diagnostics_path": str(timeline_dir / "llm_segmentation_diagnostics.json"),
+                "protected_segment_count": len(protected_segments),
+                "protected_texts": [segment.get("text") for segment in protected_segments],
+                "hard_max_content_length": hard_max_content_length,
+                "overlong_nonprotected_segments": overlong_nonprotected_segments,
+                "hanlp_phrase_boundary_violations": hanlp_phrase_boundary_violations,
+                "llm_request_text": llm_request_text,
             },
             "srt": {
                 "path": str(srt_path),
@@ -301,7 +414,7 @@ def _generate_jianying_tts(
 
     async def generate() -> tuple[str | None, str | None]:
         return await generate_voice_with_meta(
-            DEMO_TEXT.strip(),
+            DEMO_SPEECH_TEXT.strip(),
             str(audio_path),
             settings.voice_id,
             allow_fallback=False,
@@ -393,23 +506,56 @@ def _add_optional_jianying_scripts_to_path(scripts_path: Path | None) -> None:
 def _run_command(command: list[str]) -> dict[str, Any]:
     env = os.environ.copy()
     env.setdefault("UV_CACHE_DIR", ".uv-cache")
-    result = subprocess.run(
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    process = subprocess.Popen(
         command,
         cwd=Path.cwd(),
         env=env,
         text=True,
-        capture_output=True,
-        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=1,
     )
+    assert process.stdout is not None
+    assert process.stderr is not None
+
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+    stdout_thread = threading.Thread(
+        target=_tee_stream,
+        args=(process.stdout, sys.stdout, stdout_lines),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_tee_stream,
+        args=(process.stderr, sys.stderr, stderr_lines),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    returncode = process.wait()
+    stdout_thread.join()
+    stderr_thread.join()
+
     payload = {
         "command": _safe_command(command),
-        "returncode": result.returncode,
-        "stdout_tail": result.stdout.splitlines(),
-        "stderr_tail": result.stderr.splitlines(),
+        "returncode": returncode,
+        "stdout_tail": stdout_lines,
+        "stderr_tail": stderr_lines,
     }
-    if result.returncode != 0:
+    if returncode != 0:
         raise CommandExecutionError(payload)
     return payload
+
+
+def _tee_stream(source: TextIO, destination: TextIO, lines: list[str]) -> None:
+    try:
+        for line in source:
+            lines.append(line.rstrip("\r\n"))
+            destination.write(line)
+            destination.flush()
+    finally:
+        source.close()
 
 
 def _safe_command(command: list[str]) -> list[str]:
