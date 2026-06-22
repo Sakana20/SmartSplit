@@ -27,7 +27,7 @@ def test_srt_renderer_uses_sentence_text_and_skips_missing_times() -> None:
 
     assert rendered == (
         "1\n"
-        "00:00:00,000 --> 00:00:02,500\n"
+        "00:00:00,000 --> 00:00:02,600\n"
         "第一句话。\n"
         "\n"
         "2\n"
@@ -64,7 +64,7 @@ def test_srt_renderer_aligns_only_last_rendered_cue_to_audio_end(tmp_path: Path)
     ).render(items)
 
     assert audio_duration_ms(audio_path) == 4533
-    assert "00:00:00,100 --> 00:00:01,000" in rendered
+    assert "00:00:00,100 --> 00:00:01,200" in rendered
     assert "00:00:01,200 --> 00:00:04,533" in rendered
     assert items[-1].end_ms == 3000
 

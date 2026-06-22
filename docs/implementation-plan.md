@@ -215,7 +215,7 @@ tests/
 - `--llm-config configs/llm-siliconflow.toml`
 - `--segment-only`
 - `--segments path/to/editable_segments.txt`
-- `--subtitle-gap-threshold-ms 67`
+- `--subtitle-gap-threshold-ms 667`
 - `--subtitle-min-duration-ms 200`
 - `--timeline-provider asr-fuzzy|qwen3-forced|hybrid`
 - `--aligner-config configs/aligner-qwen3.toml`
@@ -433,7 +433,7 @@ SRT 渲染规则：
 - 时间格式为 `HH:MM:SS,mmm`。
 - 缺失 `start_ms` 或 `end_ms` 的句子不会渲染为字幕块。
 - 渲染顺序与 `sentence_timeline.json` 中的句子顺序一致。
-- 相邻有效字幕之间大于 0 且不超过 `--subtitle-gap-threshold-ms` 的空隙视为空白闪轴，默认阈值为 67ms（30fps 下 2 帧）；渲染时把上一条字幕延长到下一条开始时间。设置为 `0` 可关闭。
+- 相邻有效字幕之间大于 0 且不超过 `--subtitle-gap-threshold-ms` 的空隙视为空白闪轴，默认阈值为 20 帧（30fps 下精确计算 667ms，约 670ms）；渲染时把上一条字幕延长到下一条开始时间。设置为 `0` 可关闭。
 - 持续时间短于 `--subtitle-min-duration-ms` 的字幕默认优先向右、再向左利用空闲时间延长，默认最短时间为 200ms（30fps 下 6 帧）。修正不得产生相邻字幕重叠；空间不足时保留可达到的时间并记录为未完全修复。设置为 `0` 可关闭。
 - 默认仅在 SRT 渲染时将第一条有效字幕的开始时间对齐到音频起点 `00:00:00,000`，可通过 `--no-align-first-subtitle-to-audio-start` 关闭。
 - 默认将最后一条有效字幕的结束时间对齐到字幕对齐音频的实际结束时间，并向上取整到 30fps 帧边界。CLI 通过 `--subtitle-alignment-audio` 接收该音频，未指定时使用 `--audio`，并可通过 `--no-align-last-subtitle-to-audio-end` 关闭。

@@ -22,7 +22,7 @@
 - 本地 Qwen3 forced aligner，默认模型目录为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`。
 - `asr-fuzzy`、`qwen3-forced` 和 `hybrid` 三种时间轴策略。默认配置为 `hybrid`，最终时间以 Qwen3 forced alignment 为主，ASR fuzzy 进入 telemetry。
 - SRT 字幕渲染。
-- SRT 渲染默认将首条有效字幕对齐音频起点、末条有效字幕对齐音频结尾，并修复不超过 67ms 的短间隙和不足 200ms 的短字幕；所有渲染修正写入独立报告，不回写主时间轴。
+- SRT 渲染默认将首条有效字幕对齐音频起点、末条有效字幕对齐音频结尾，并修复不超过 20 帧（精确计算 667ms，约 670ms）的短间隙和不足 200ms 的短字幕；所有渲染修正写入独立报告，不回写主时间轴。
 - 丰富 JSON 输出和对齐诊断。
 
 当前 ASR 实现：

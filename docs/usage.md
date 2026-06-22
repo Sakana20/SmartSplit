@@ -254,7 +254,7 @@ uv run funasr-timeline \
 | `--subtitle-alignment-audio` | 否 | `--audio` | 渲染 SRT 时用于将最后一条有效字幕的结束时间对齐到音频结尾。TTS 音频经过格式转换时，应传入转换前的原始音频。 |
 | `--no-align-last-subtitle-to-audio-end` | 否 | `false` | 关闭末条字幕结束时间到音频结尾的对齐。 |
 | `--no-align-first-subtitle-to-audio-start` | 否 | `false` | 关闭首条有效字幕开始时间到音频起点 `00:00:00,000` 的对齐。 |
-| `--subtitle-gap-threshold-ms` | 否 | `67` | 空白闪轴阈值；相邻字幕的正间隙不超过该值时延长上一条字幕以填满间隙，`0` 表示关闭。 |
+| `--subtitle-gap-threshold-ms` | 否 | `667` | 空白闪轴阈值，对应 30fps 下 20 帧（约 670ms）；相邻字幕的正间隙不超过该值时延长上一条字幕以填满间隙，`0` 表示关闭。 |
 | `--subtitle-min-duration-ms` | 否 | `200` | 渲染字幕最短持续时间；短字幕在不重叠的前提下利用相邻空闲时间延长，`0` 表示关闭。 |
 | `--output-dir` | 是 | 无 | 输出目录。不存在会自动创建。 |
 | `--segmenter` | 否 | `regex` | 分句实现，可选 `regex`、`hanlp`、`jieba-subtitle`、`llm`。 |
@@ -480,7 +480,7 @@ hybrid 分析数据。
 - 时间格式为 `HH:MM:SS,mmm`。
 - 字幕正文使用 `sentence_timeline.json` 中的 `text`。
 - 缺失时间或非法时间范围的句子不会渲染。
-- 默认填充不超过 67ms 的相邻字幕空隙，避免字幕短暂消失形成空白闪轴。
+- 默认填充不超过 20 帧（精确计算 667ms，约 670ms）的相邻字幕空隙，避免字幕短暂消失形成空白闪轴。
 - 默认把短于 200ms 的字幕向相邻空闲时间延长；不会移动其他字幕、合并文本或制造重叠。
 - 闪轴处理在首尾音频对齐后执行，并且只改变 SRT 渲染副本，不回写 `sentence_timeline.json`。
 
