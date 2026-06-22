@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本项目用于构建一个基于统一 ASR 接口的音频时间轴处理流程：先从配音音频中生成字符级或 token 级时间轴，再将其与已有纯文本稿件进行顺序对齐，并通过顺序窗口 fuzzy 匹配合并为以原稿文本为准的句子级时间轴。当前已实现 mock ASR 服务和基于 FunASR `AutoModel` 的本地 `paraformer-zh` 服务。
+本项目用于构建一个以稿件为准、可复核的音频时间轴处理流程：既可从统一 ASR 接口生成 token 时间轴并执行顺序 fuzzy 匹配，也可使用 Qwen3 ForcedAligner 将稿件直接对齐到 TTS 音频。当前实现支持 `asr-fuzzy`、`qwen3-forced` 和以 forced alignment 为主时间来源的 `hybrid` 三种策略。
 
 ## 工作原则
 
@@ -18,15 +18,18 @@
 - 稿件输入使用 `.txt` 纯文本文件，内容为分段文本。
 - 音频输入第一阶段先跑通 `.mp3`。
 - 多种常见音频格式如 `.wav`、`.ogg` 等，以及统一音频格式转换能力先保留为待做事项。
-- 句子切分保留可替换接口，当前内置 `regex` 和 `jieba-subtitle`。
+- 句子切分保留可替换接口，当前内置 `regex`、`hanlp`、`jieba-subtitle` 和 `llm`。
+- LLM 分句按 block 并发请求和独立重试；失败 block 默认使用 `hanlp` fallback，成功 block 不重跑。
 - 稿件中可用 `[[NO_SPLIT]]...[[/NO_SPLIT]]` 标记保护不需要自动分句的片段。
 - 数字归一化、领域词替换、同义词处理等复杂归一化暂不处理。
 - ASR 能力通过统一接口接入，每个具体 ASR 服务实现该接口。
 - 当前真实模型实现为 `paraformer-zh`，代码位于 `src/funasr_timeline/asr/paraformer_zh_service.py`。
 - 本地 `paraformer-zh` 默认模型目录为 `/Users/sakana/PyEnv/paraformer`，默认推理设备为 macOS `mps`。
+- 当前 forced alignment 实现为本地 `Qwen3-ForcedAligner-0.6B`，默认模型目录为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`，默认使用 `mps` 和 `bfloat16`。
 - 句子到 token 的匹配采用顺序窗口 fuzzy 匹配，适配 ground truth 文本生成音频的顺序稳定场景。
 - 支持单独运行分句，输出 `editable_segments.txt`，并支持用编辑后的分句文件通过 `--segments` 继续完整流程。
 - 最终句子时间范围必须保证相邻句子不重叠，并保留原始时间和修正诊断字段。
+- SRT 默认将首条有效字幕对齐音频起点、末条有效字幕对齐音频结尾，填充不超过 67ms 的短间隙，并尽量把不足 200ms 的字幕延长到最短时长；渲染修正只作用于 SRT 副本并写入 `subtitle_render_report.json`。
 - 输出应尽可能丰富，包含对齐、诊断和中间字段，供后续分析与调整。
 
 ## Python 项目规范
@@ -47,12 +50,12 @@
 
 ## 预期流程
 
-1. 通过统一 ASR 接口从音频生成字符级或 token 级时间轴。
+1. 根据时间轴策略，通过统一 ASR 接口生成 token 时间轴，和/或通过 forced alignment 接口将稿件对齐到音频。
 2. 读取 `.txt` 稿件，并按可替换的句子切分接口生成句子片段。
 3. 对稿件文本和 ASR 文本执行基础归一化。
 4. 对稿件字符和 ASR 字符进行顺序全局对齐。
-5. 将每个稿件句子按顺序窗口 fuzzy 匹配到 ASR token 时间轴。
-6. 合并句子首尾 token 时间，并修正相邻句子的重叠时间范围。
+5. 在 ASR fuzzy 分支中，将每个稿件句子按顺序窗口 fuzzy 匹配到 ASR token 时间轴；在 forced 分支中按归一化 offset 映射句子时间。
+6. 根据 `asr-fuzzy`、`qwen3-forced` 或 `hybrid` 策略选择最终句子时间，并修正相邻句子的重叠范围。
 7. 通过渲染接口导出 SRT 字幕。
 8. 导出可复核的 JSON 结果、诊断报告和中间产物。
 
@@ -64,7 +67,10 @@
 - `alignment.json`：全文顺序对齐结果和 offset 到 token 的映射。
 - `sentence_timeline.json`：以稿件句子文本为准的句子级时间轴。
 - `sentence_timeline.srt`：由句子级时间轴渲染得到的 SRT 字幕。
+- `subtitle_render_report.json`：SRT 首尾对齐、短间隙填充、短字幕延长和未完全修复项的诊断。
 - `alignment_report.json`：低置信度匹配、未匹配字符、额外 ASR 内容和错配诊断。
+- `forced_alignment.json`：forced aligner 标准化单元和文本一致性诊断，仅 forced/hybrid 模式输出。
+- `telemetry.json`：forced 与 ASR fuzzy 分支对比，仅 forced/hybrid 模式输出。
 - 可选的 `sentence_timeline.vtt`：后续阶段的字幕导出。
 - 覆盖单元、集成和端到端行为的测试套件。
 - lint、format、typecheck 和 test 的项目质量命令。

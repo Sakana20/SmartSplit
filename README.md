@@ -22,6 +22,7 @@
 - 本地 Qwen3 forced aligner，默认模型目录为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`。
 - `asr-fuzzy`、`qwen3-forced` 和 `hybrid` 三种时间轴策略。默认配置为 `hybrid`，最终时间以 Qwen3 forced alignment 为主，ASR fuzzy 进入 telemetry。
 - SRT 字幕渲染。
+- SRT 渲染默认将首条有效字幕对齐音频起点、末条有效字幕对齐音频结尾，并修复不超过 67ms 的短间隙和不足 200ms 的短字幕；所有渲染修正写入独立报告，不回写主时间轴。
 - 丰富 JSON 输出和对齐诊断。
 
 当前 ASR 实现：
@@ -42,6 +43,7 @@
 - `alignment.json`
 - `sentence_timeline.json`
 - `sentence_timeline.srt`
+- `subtitle_render_report.json`
 - `alignment_report.json`
 
 `qwen3-forced` 或 `hybrid` 模式还会输出：
@@ -93,7 +95,7 @@ uv run pytest tests/e2e/test_jianying_smartsplit_demo.py -q
 
 当前测试收集情况和质量命令：
 
-- `pytest --collect-only`：当前收集 40 个测试，其中包含 1 个标记为 `e2e_real` 的真实剪映/LLM/Qwen3/FunASR 端到端测试。
+- `pytest --collect-only`：当前收集 67 个测试，其中包含 1 个标记为 `e2e_real` 的真实剪映/LLM/Qwen3/FunASR 端到端测试。
 - 常规确定性测试可使用 `uv run pytest -m 'not e2e_real'`。
 - 完整真实链路测试需要本地模型、TTS、剪映 Python 接口和 LLM API key。
 - 代码变更时仍应运行 `ruff check`、`ruff format --check` 和 `mypy src`。

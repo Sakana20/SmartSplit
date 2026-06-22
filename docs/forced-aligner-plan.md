@@ -359,6 +359,8 @@ hybrid 模式下：
 
 真实剪映 TTS、本地 Qwen3 forced aligner 和本地 `paraformer-zh` 链路已进入默认 demo e2e。运行方式和环境要求见 `docs/usage.md` 的“端到端测试”部分。
 
+最终 SRT 渲染在时间轴策略之后统一执行：首条和末条有效字幕默认分别对齐音频首尾，短间隙与短字幕在渲染副本中修复，并由 `subtitle_render_report.json` 记录；这些修正不会改变 forced alignment、ASR fuzzy telemetry 或 `sentence_timeline.json`。
+
 ## 已完成
 
 - forced alignment 基础数据结构、Qwen3 服务、mock 服务和 factory。

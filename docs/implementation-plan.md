@@ -66,7 +66,7 @@ uv run mypy src
 - SRT 字幕渲染接口和 `sentence_timeline.srt` 输出。
 - 丰富 JSON 中间产物和诊断报告，包括 `forced_alignment.json` 和 `telemetry.json`。
 - 单元、集成和端到端测试。
-- 当前 `pytest --collect-only` 收集 40 个测试，覆盖 mock 流程、CLI 流程、`paraformer-zh` 结果转换逻辑、forced alignment 映射、hybrid telemetry、LLM 分句校验、顺序窗口 fuzzy 匹配、时间无重叠修正、SRT 渲染、保护区分句、jieba 短字幕分句、可编辑分句输入和真实 e2e 入口。
+- 当前 `pytest --collect-only -q` 收集 67 个测试，覆盖 mock 流程、CLI 流程、`paraformer-zh` 结果转换逻辑、forced alignment 映射、hybrid telemetry、LLM block 重试与 HanLP fallback、顺序窗口 fuzzy 匹配、时间无重叠修正、SRT 首尾对齐和后处理、保护区分句、HanLP/jieba 短字幕分句、可编辑分句输入和真实 e2e 入口。
 - 已手动验证本地 `paraformer-zh` + `mps` 可完成真实音频推理，并可通过 CLI 生成完整 JSON 输出。
 
 当前完整流程输出文件：
@@ -77,6 +77,7 @@ uv run mypy src
 - `alignment.json`
 - `sentence_timeline.json`
 - `sentence_timeline.srt`
+- `subtitle_render_report.json`
 - `alignment_report.json`
 
 `qwen3-forced` 或 `hybrid` 模式还会输出：

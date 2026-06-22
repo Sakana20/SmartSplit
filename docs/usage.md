@@ -524,6 +524,8 @@ uv run mypy src
 
 ## 端到端测试
 
+当前 `uv run pytest --collect-only -q` 共收集 67 个测试，其中真实剪映链路有 1 个测试标记为 `e2e_real`。
+
 `tests/e2e/test_jianying_smartsplit_demo.py` 默认运行真实 demo 链路：复用剪映 demo 中的长中文混合文本，调用剪映 TTS 生成音频，使用 LLM 分句，通过 `hybrid` 同时运行 Qwen3 forced aligner 和本地 `paraformer-zh`/FunASR ASR，并可把音频和 SRT 写回剪映草稿。测试成功时会额外写出 `e2e_diagnostics.json`，记录命令、文本长度、TTS 信息、音频转换、剪映草稿、句子数量、状态分布、telemetry 摘要和 report 摘要；子命令失败时会写出 `e2e_failure_diagnostics.json`，保留 TTS、音频转换和 stdout/stderr 尾部输出，方便定位。
 
 运行前需要本机具备可 import 的剪映 Python 接口、TTS 后端、本地 `paraformer-zh`、本地 Qwen3 forced aligner、可用 LLM API key 和配置：
