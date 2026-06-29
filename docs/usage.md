@@ -256,6 +256,7 @@ uv run funasr-timeline \
 | `--no-align-first-subtitle-to-audio-start` | 否 | `false` | 关闭首条有效字幕开始时间到音频起点 `00:00:00,000` 的对齐。 |
 | `--subtitle-gap-threshold-ms` | 否 | `667` | 空白闪轴阈值，对应 30fps 下 20 帧（约 670ms）；相邻字幕的正间隙不超过该值时延长上一条字幕以填满间隙，`0` 表示关闭。 |
 | `--subtitle-min-duration-ms` | 否 | `200` | 渲染字幕最短持续时间；短字幕在不重叠的前提下利用相邻空闲时间延长，`0` 表示关闭。 |
+| `--log-level` | 否 | `DEBUG` | 终端日志等级，可选 `DEBUG`、`INFO`、`WARNING`、`ERROR`。 |
 | `--output-dir` | 是 | 无 | 输出目录。不存在会自动创建。 |
 | `--segmenter` | 否 | `regex` | 分句实现，可选 `regex`、`hanlp`、`jieba-subtitle`、`llm`。 |
 | `--segment-threshold` | 否 | `10` | `hanlp` 分句的有效字符数阈值。 |

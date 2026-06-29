@@ -217,6 +217,7 @@ tests/
 - `--segments path/to/editable_segments.txt`
 - `--subtitle-gap-threshold-ms 667`
 - `--subtitle-min-duration-ms 200`
+- `--log-level DEBUG|INFO|WARNING|ERROR`
 - `--timeline-provider asr-fuzzy|qwen3-forced|hybrid`
 - `--aligner-config configs/aligner-qwen3.toml`
 - `--asr-provider mock|paraformer-zh`

@@ -11,6 +11,7 @@ def test_cli_llm_failure_defaults_to_hanlp_fallback_without_raise() -> None:
     assert args.llm_raise_on_error is False
     assert args.subtitle_gap_threshold_ms == 667
     assert args.subtitle_min_duration_ms == 200
+    assert args.log_level == "DEBUG"
 
 
 def test_cli_generates_expected_files(tmp_path: Path) -> None:

@@ -10,14 +10,14 @@ from rich.table import Table
 console = Console()
 
 
-def configure_logging(*, quiet: bool = False) -> None:
+def configure_logging(*, level: str = "DEBUG", quiet: bool = False) -> None:
     logger.remove()
     if quiet:
         return
 
     logger.add(
         sys.stderr,
-        level="DEBUG",
+        level=level,
         format="<green>{time:HH:mm:ss.SSS}</green> | <level>{level:<8}</level> | {message}",
     )
 

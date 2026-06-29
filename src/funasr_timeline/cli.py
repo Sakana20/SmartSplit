@@ -131,6 +131,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="paraformer-zh 推理设备，例如 mps、cpu、cuda:0",
     )
     parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="DEBUG",
+        help="终端日志等级。默认 DEBUG。",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="关闭调试日志，仅保留错误和 argparse 输出。",
@@ -141,7 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    configure_logging(quiet=args.quiet)
+    configure_logging(level=args.log_level, quiet=args.quiet)
     segmenter = create_segmenter(
         args.segmenter,
         llm_config_path=args.llm_config,
