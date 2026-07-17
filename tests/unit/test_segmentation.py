@@ -85,6 +85,32 @@ def test_regex_segmenter_splits_by_strong_punctuation_and_paragraphs() -> None:
     assert [segment.boundary for segment in segments] == ["punctuation", "punctuation", "paragraph"]
 
 
+def test_segmenters_merge_one_character_segment_into_previous_sentence() -> None:
+    result = RegexSentenceSegmenter().segment("这个味道适合夏天。甜。下一句。")
+
+    assert [segment.text for segment in result.segments] == [
+        "这个味道适合夏天。甜。",
+        "下一句。",
+    ]
+    assert result.segments[0].char_start == 0
+    assert result.segments[0].char_end == len("这个味道适合夏天。甜。")
+
+
+def test_segmenters_merge_leading_one_character_segment_into_next_sentence() -> None:
+    result = RegexSentenceSegmenter().segment("甜。这个味道适合夏天。")
+
+    assert [segment.text for segment in result.segments] == ["甜。这个味道适合夏天。"]
+    assert result.segments[0].char_start == 0
+    assert result.segments[0].char_end == len(result.text)
+
+
+def test_segmenters_do_not_merge_one_character_segment_across_paragraphs() -> None:
+    result = RegexSentenceSegmenter().segment("甜。\n这个味道适合夏天。")
+
+    assert [segment.text for segment in result.segments] == ["甜。", "这个味道适合夏天。"]
+    assert [segment.paragraph_index for segment in result.segments] == [0, 1]
+
+
 def test_attach_normalized_ranges_tracks_sentence_offsets() -> None:
     text = "第一句。\n第二句。"
     normalized = normalize_text(text)
@@ -114,6 +140,19 @@ def test_no_split_markers_keep_protected_content_as_one_segment() -> None:
     assert [segment.paragraph_index for segment in result.segments] == [0, 0, 0]
     assert result.segments[1].boundary == "protected"
     assert remove_no_split_markers(text) == result.text
+
+
+def test_short_segment_merging_does_not_absorb_protected_segments() -> None:
+    text = f"开头。{NO_SPLIT_START}短{NO_SPLIT_END}尾。"
+
+    result = RegexSentenceSegmenter().segment(text)
+
+    assert [segment.text for segment in result.segments] == ["开头。", "短", "尾。"]
+    assert [segment.boundary for segment in result.segments] == [
+        "punctuation",
+        "protected",
+        "punctuation",
+    ]
 
 
 @pytest.mark.parametrize(

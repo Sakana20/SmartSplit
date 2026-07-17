@@ -14,6 +14,7 @@ from funasr_timeline.segmentation.protection import (
     split_text_blocks,
     trailing_whitespace_len,
 )
+from funasr_timeline.segmentation.short_merge import merge_short_segments
 
 
 class JiebaSubtitleSegmenter(SentenceSegmenter):
@@ -78,8 +79,9 @@ class JiebaSubtitleSegmenter(SentenceSegmenter):
                         )
                     )
 
-        logger.debug("jieba-subtitle 分句完成：segments={}", len(segments))
-        return SegmentationResult(text=prepared_text, segments=segments)
+        result = merge_short_segments(SegmentationResult(text=prepared_text, segments=segments))
+        logger.debug("jieba-subtitle 分句完成：segments={}", len(result.segments))
+        return result
 
 
 def _split_span_by_jieba(text: str, absolute_start: int, max_chars: int) -> list[tuple[int, int]]:

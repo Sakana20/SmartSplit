@@ -11,6 +11,7 @@ from funasr_timeline.segmentation.protection import (
     split_text_blocks,
     trailing_whitespace_len,
 )
+from funasr_timeline.segmentation.short_merge import merge_short_segments
 
 
 class RegexSentenceSegmenter(SentenceSegmenter):
@@ -53,5 +54,6 @@ class RegexSentenceSegmenter(SentenceSegmenter):
                     )
                 )
 
-        logger.debug("regex 分句完成：segments={}", len(segments))
-        return SegmentationResult(text=prepared_text, segments=segments)
+        result = merge_short_segments(SegmentationResult(text=prepared_text, segments=segments))
+        logger.debug("regex 分句完成：segments={}", len(result.segments))
+        return result

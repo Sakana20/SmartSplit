@@ -29,6 +29,7 @@ from funasr_timeline.segmentation.protection import (
     append_protected_segment,
     split_text_blocks,
 )
+from funasr_timeline.segmentation.short_merge import merge_short_segments
 
 DEFAULT_LLM_CONFIG_PATH = Path("configs/llm-siliconflow.toml")
 _LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS = 8
@@ -234,19 +235,20 @@ class LlmSentenceSegmenter:
             raise
 
         segments = [replace(segment, index=index) for index, segment in enumerate(segments)]
-        logger.debug("LLM 分句完成：segments={}", len(segments))
+        result = merge_short_segments(SegmentationResult(text=prepared_text, segments=segments))
+        logger.debug("LLM 分句完成：segments={}", len(result.segments))
 
         self._write_diagnostics(
             status="validated_with_fallback" if response.failures else "validated",
             prompt_blocks=prompt_blocks,
             response=response,
             validation={
-                "segment_count": len(segments),
+                "segment_count": len(result.segments),
                 "block_strategies": block_strategies,
             },
         )
 
-        return SegmentationResult(text=prepared_text, segments=segments)
+        return result
 
     def _fallback_block(self, *, block: TextBlock, block_id: str) -> list[SentenceSegment]:
         logger.debug(

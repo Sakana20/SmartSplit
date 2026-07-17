@@ -12,6 +12,7 @@ from funasr_timeline.segmentation.protection import (
     append_protected_segment,
     split_text_blocks,
 )
+from funasr_timeline.segmentation.short_merge import merge_short_segments
 
 DEFAULT_THRESHOLD = 10
 PHRASE_BOUNDARIES = frozenset("，,、。！？!?；;：:")
@@ -73,8 +74,9 @@ class HanlpSegmenter(SentenceSegmenter):
                         )
                     )
 
-        logger.debug("hanlp 分句完成：segments={}", len(segments))
-        return SegmentationResult(text=prepared_text, segments=segments)
+        result = merge_short_segments(SegmentationResult(text=prepared_text, segments=segments))
+        logger.debug("hanlp 分句完成：segments={}", len(result.segments))
+        return result
 
 
 @lru_cache(maxsize=1)
