@@ -5,7 +5,7 @@
 当前支持：
 
 - `.txt` 分段纯文本稿件。
-- `.mp3` 音频路径校验。
+- MP3 及其他 ffmpeg 可读取音频格式；非 MP3 输入会自动、安全地转换为 MP3 后送入 ASR，原始音频时长由 ffprobe 读取。
 - mock ASR 时间轴输入。
 - 本地 `paraformer-zh` FunASR 推理，默认模型目录为 `/Users/sakana/PyEnv/paraformer`。
 - macOS MPS 推理，默认 `--paraformer-device mps`。
@@ -43,6 +43,7 @@
 - `alignment.json`
 - `sentence_timeline.json`
 - `sentence_timeline.srt`
+- `audio_conversion.json`
 - `subtitle_render_report.json`
 - `alignment_report.json`
 

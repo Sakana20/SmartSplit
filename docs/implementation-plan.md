@@ -10,7 +10,7 @@
 4. 以稿件原文为准，将 ASR fuzzy 或 forced alignment 时间范围合并为句子级时间范围。
 5. 输出丰富的 JSON 中间产物和诊断信息，供后续调参、复核和扩展。
 
-当前重点是跑通 `.txt` 稿件和 `.mp3` 音频的可复核主流程，并为后续多音频格式、音频转换、更多 ASR/forced alignment 服务和字幕导出留下清晰接口。当前真实模型实现包括本地 `paraformer-zh` ASR 和本地 `Qwen3-ForcedAligner-0.6B`。
+当前重点是跑通 `.txt` 稿件和统一 MP3 音频的可复核主流程，并为更多 ASR/forced alignment 服务和字幕导出留下清晰接口。非 MP3 音频由 ffmpeg 适配为 MP3。当前真实模型实现包括本地 `paraformer-zh` ASR 和本地 `Qwen3-ForcedAligner-0.6B`。
 
 ## 项目工具
 
@@ -111,13 +111,12 @@ tests/fixtures/stage1_paraformer/
 
 - 稿件格式：`.txt` 纯文本。
 - 稿件内容：分段文本，保留段落信息。
-- 音频格式：当前完整流程要求 `.mp3`。
+- 音频格式：MP3 直接进入 ASR，非 MP3 由 ffmpeg 自动转换为 MP3；原始音频时长由 ffprobe 统一读取。
 - 输出格式：以 JSON 为主，字段尽可能丰富，方便后续分析和调整。
 
 ### 暂不处理内容
 
-- `.wav`、`.ogg` 等多音频格式完整支持。
-- 音频自动转换为统一输入格式。
+- 其他音频格式的统一转换依赖本地 ffmpeg；仍需持续补充更多格式的端到端覆盖。
 - 完整数字读法归一化，例如日期、金额、百分比、长数字和复杂单位的互相转换。当前仅在匹配阶段提供轻量兼容，用于覆盖 `12元` 与「十二元」这类常见差异。
 - 领域词、产品名、缩写、同义词替换。
 - `.vtt`、`.csv` 等字幕或表格导出。
@@ -127,7 +126,7 @@ tests/fixtures/stage1_paraformer/
 - ASR 服务统一接口：每个真实 ASR 服务都实现同一接口。
 - Forced alignment 服务独立于 ASR 接口：该服务接收音频和真实文本，输出文本单元时间戳，不能伪装成 `AsrService`。
 - 句子切分统一接口：当前内置 `regex`、`hanlp`、`jieba-subtitle` 和 `llm`，后续可继续增加实现。
-- 音频输入适配层：当前接收 `.mp3`，后续扩展多格式检测和格式转换。
+- 音频输入适配层：接收任意 ffmpeg 可读取格式，非 MP3 统一转换为带源文件指纹的 MP3，使用临时文件原子落盘并复用有效缓存。
 - 渲染输出统一接口：当前已实现 SRT，后续可扩展 VTT、CSV 等格式。
 - 输出 schema 可扩展：保留中间字段和诊断字段，避免后续分析缺少排查依据。
 
@@ -208,7 +207,7 @@ tests/
 命令行接收显式路径，不依赖固定文件名：
 
 - `--manuscript path/to/input.txt`
-- `--audio path/to/input.mp3`
+- `--audio path/to/input.ogg`（非 MP3 输入会自动转换为 MP3）
 - `--output-dir path/to/output`
 - `--segmenter regex|hanlp|jieba-subtitle|llm`
 - `--segment-threshold 10`
@@ -689,8 +688,7 @@ uv run pytest -m 'not e2e_real'
 ## 已确认决策
 
 - 稿件使用 `.txt` 纯文本，内容为分段文本。
-- 当前先支持 `.mp3` 音频。
-- 后续需要支持 `.wav`、`.ogg` 等常见格式，或通过转换统一输入格式。
+- 当前支持 MP3 及 ffmpeg 可读取的非 MP3 音频；非 MP3 自动转换为 MP3。
 - 句子切分保留接口，当前内置 `regex`、`hanlp`、`jieba-subtitle` 和 `llm`。
 - JSON 输出要尽可能丰富，服务于后续分析调整。
 - 完整数字归一化、领域词、同义词等暂不处理；当前仅保留轻量数字读法匹配兼容。
@@ -710,7 +708,7 @@ uv run pytest -m 'not e2e_real'
 ## 待后续确认
 
 - `.mp3` 解码依赖和本地环境要求。
-- 多音频格式转换使用 `ffmpeg` 还是其他库。
+- ffmpeg/ffprobe 的本地安装和 PATH 配置。
 - 低置信度阈值是否需要暴露到 CLI 或配置文件。
 - 是否将真实 `paraformer-zh` 推理纳入可选慢速测试。
 - 是否增加 `.vtt` 或 `.csv`。

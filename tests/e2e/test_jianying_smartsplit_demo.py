@@ -137,7 +137,11 @@ def test_jianying_demo_llm_qwen3_funasr_writes_detailed_diagnostics(
     paths = _prepare_real_workspace(tmp_path, draft_path)
 
     audio_path, tts_meta = _generate_jianying_tts(paths["asset_dir"], settings)
-    asr_audio_path, conversion_meta = _ensure_mp3_audio(audio_path, paths["timeline_dir"])
+    conversion_path = paths["timeline_dir"] / "audio_conversion.json"
+    conversion_meta: dict[str, Any] = {
+        "source_audio_path": str(audio_path),
+        "status": "pending",
+    }
 
     command = [
         sys.executable,
@@ -146,8 +150,6 @@ def test_jianying_demo_llm_qwen3_funasr_writes_detailed_diagnostics(
         "--manuscript",
         str(paths["manuscript"]),
         "--audio",
-        str(asr_audio_path),
-        "--subtitle-alignment-audio",
         str(audio_path),
         "--output-dir",
         str(paths["timeline_dir"]),
@@ -164,6 +166,8 @@ def test_jianying_demo_llm_qwen3_funasr_writes_detailed_diagnostics(
     try:
         command_result = _run_command(command)
     except CommandExecutionError as error:
+        if conversion_path.exists():
+            conversion_meta = json.loads(conversion_path.read_text(encoding="utf-8"))
         _write_json(
             paths["timeline_dir"] / "e2e_failure_diagnostics.json",
             {
@@ -178,6 +182,8 @@ def test_jianying_demo_llm_qwen3_funasr_writes_detailed_diagnostics(
             },
         )
         raise
+
+    conversion_meta = json.loads(conversion_path.read_text(encoding="utf-8"))
 
     jianying_meta: dict[str, Any] = {"draft_path": str(draft_path), "srt_imported": False}
     if settings.write_jianying_draft:
@@ -432,32 +438,6 @@ def _generate_jianying_tts(
         "backend": backend,
         "audio_path": str(audio_path),
         "actual_audio_path": str(actual_audio_path),
-    }
-
-
-def _ensure_mp3_audio(audio_path: Path, timeline_dir: Path) -> tuple[Path, dict[str, Any]]:
-    if audio_path.suffix.lower() == ".mp3":
-        return audio_path, {"converted": False, "audio_path": str(audio_path)}
-
-    converted_path = timeline_dir / f"{audio_path.stem}.mp3"
-    command = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(audio_path),
-        "-vn",
-        "-codec:a",
-        "libmp3lame",
-        "-q:a",
-        "2",
-        str(converted_path),
-    ]
-    result = _run_command(command)
-    return converted_path, {
-        "converted": True,
-        "source_audio_path": str(audio_path),
-        "audio_path": str(converted_path),
-        "command": result,
     }
 
 

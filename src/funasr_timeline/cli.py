@@ -30,7 +30,11 @@ from funasr_timeline.segmentation.factory import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="生成以稿件为准的句子级音频时间轴。")
     parser.add_argument("--manuscript", required=True, type=Path, help=".txt 稿件路径")
-    parser.add_argument("--audio", type=Path, help=".mp3 音频路径")
+    parser.add_argument(
+        "--audio",
+        type=Path,
+        help="音频路径；非 MP3 输入会先由 ffmpeg 转换为 MP3",
+    )
     parser.add_argument(
         "--subtitle-alignment-audio",
         type=Path,

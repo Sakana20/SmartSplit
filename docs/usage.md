@@ -4,7 +4,7 @@
 
 ## 基本能力
 
-当前流程用于把 `.txt` ground truth 稿件和 `.mp3` 音频转换为以稿件文本为准的句子级时间轴，并输出 SRT 字幕。
+当前流程用于把 `.txt` ground truth 稿件和音频转换为以稿件文本为准的句子级时间轴，并输出 SRT 字幕。MP3 直接送入 ASR，其他音频格式先由 `ffmpeg` 自动转换为 MP3。
 
 主流程：
 
@@ -36,7 +36,10 @@
 
 ### 音频
 
-- 当前完整流程要求音频后缀为 `.mp3`。
+- `--audio` 支持 MP3 以及其他 ffmpeg 可读取的音频格式。
+- 非 MP3 音频会先转换到输出目录的 `audio/` 子目录，再送入 ASR；转换文件名包含源文件指纹，有效缓存会直接复用。
+- 转换先写临时文件并在校验成功后原子落盘，不会用固定文件名静默覆盖同名音频。
+- 运行环境必须安装完整的 `ffmpeg` 工具，并确保 `ffmpeg`、`ffprobe` 都位于 `PATH` 中。
 - 真实 ASR 默认使用本地 `paraformer-zh` 模型。
 - mock 流程只校验音频路径和 `.mp3` 后缀，不读取真实音频内容。
 
@@ -250,7 +253,7 @@ uv run funasr-timeline \
 | 参数 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `--manuscript` | 是 | 无 | `.txt` 稿件路径。 |
-| `--audio` | 完整流程必填 | 无 | `.mp3` 音频路径。`--segment-only` 时不需要。 |
+| `--audio` | 完整流程必填 | 无 | MP3 或其他 ffmpeg 可读取的音频路径。非 MP3 会自动转换；`--segment-only` 时不需要。 |
 | `--subtitle-alignment-audio` | 否 | `--audio` | 渲染 SRT 时用于将最后一条有效字幕的结束时间对齐到音频结尾。TTS 音频经过格式转换时，应传入转换前的原始音频。 |
 | `--no-align-last-subtitle-to-audio-end` | 否 | `false` | 关闭末条字幕结束时间到音频结尾的对齐。 |
 | `--no-align-first-subtitle-to-audio-start` | 否 | `false` | 关闭首条有效字幕开始时间到音频起点 `00:00:00,000` 的对齐。 |
@@ -275,17 +278,19 @@ uv run funasr-timeline \
 
 CLI 默认启用 debug 日志，便于检查稿件读取、ASR、分句、归一化、匹配、合并和文件写入等阶段。命令结束时会用 Rich 表格展示输出路径；该表格只影响终端显示，不会改变 JSON、SRT 或其他产物内容。
 
-如果 ASR 使用由 TTS 原始音频转换得到的 MP3，建议显式传入原始音频：
+如果输入是 OGG、WAV 等非 MP3 音频，程序会自动转换；如需明确指定字幕末尾对齐使用的原始音频，可以显式传入：
 
 ```bash
 uv run funasr-timeline \
   --manuscript path/to/manuscript.txt \
-  --audio path/to/converted.mp3 \
+  --audio path/to/original.ogg \
   --subtitle-alignment-audio path/to/original.ogg \
   --output-dir path/to/output
 ```
 
 首条字幕默认从 `00:00:00,000` 开始，末条字幕默认对齐音频结尾并向上取整到 30fps 帧边界。两项对齐都只在最终 SRT 渲染时生效；`sentence_timeline.json`、匹配结果、诊断字段和主流程时间轴均保留原值。
+
+音频转换信息会在后续 ASR、对齐和渲染前写入 `audio_conversion.json`；非 MP3 转换结果保存在 `output-dir/audio/`。字幕末尾所需的原始音频时长统一由 `ffprobe` 读取，因此支持范围与 ffmpeg 保持一致。
 
 ## LLM 分句配置
 

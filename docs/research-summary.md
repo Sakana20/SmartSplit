@@ -9,7 +9,7 @@
 3. 将字符级时间范围合并为句子级时间范围。
 4. 输出丰富的 JSON 结果和诊断报告，便于人工复核和后续阶段优化。
 
-当前先聚焦 `.txt` 稿件和 `.mp3` 音频，并已接入本地 `paraformer-zh` ASR 服务和本地 Qwen3 forced aligner。`paraformer-zh` 内部使用 FunASR `AutoModel`；Qwen3 forced aligner 通过 `qwen_asr.Qwen3ForcedAligner` 接入。后续再扩展 `.wav`、`.ogg` 等常见音频格式或统一音频转换能力。
+当前先聚焦 `.txt` 稿件和统一 MP3 音频，并已接入本地 `paraformer-zh` ASR 服务和本地 Qwen3 forced aligner。非 MP3 音频由 ffmpeg 自动转换为 MP3；`paraformer-zh` 内部使用 FunASR `AutoModel`；Qwen3 forced aligner 通过 `qwen_asr.Qwen3ForcedAligner` 接入。
 
 ## FunASR 时间戳能力
 
@@ -74,15 +74,14 @@ FunASR 的 Paraformer 示例通常会在结果对象中暴露 timestamp 信息�
 
 ## 音频格式策略
 
-需求上需要支持 `.mp3`、`.wav`、`.ogg` 等常见音频格式，或者先转换为统一输入格式后再送入 ASR。
+需求上需要支持 `.mp3`、`.wav`、`.ogg` 等常见音频格式，并统一转换为 MP3 后送入 ASR。
 
 阶段策略：
 
-- 当前实现：完整流程要求 `.mp3`。
-- 后续阶段：增加格式检测和音频转换能力。
-- 转换方案待确认，候选方向包括 `ffmpeg` 命令行或 Python 音频库封装。
+- 当前实现：MP3 直接进入 ASR，所有非 MP3 输入由 `ffmpeg` 自动转换为 MP3；音频时长统一由 `ffprobe` 读取。
+- 转换结果使用源文件指纹命名并原子落盘，有效缓存可复用；转换详情在后续处理前写入 `audio_conversion.json`。
 
-音频转换应作为独立适配层，不应混入文本对齐逻辑。
+音频转换作为独立适配层，不混入文本对齐逻辑。
 
 ## 对齐策略
 

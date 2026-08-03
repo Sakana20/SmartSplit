@@ -8,6 +8,7 @@ from loguru import logger
 
 from funasr_timeline.alignment import AlignmentResult, align_texts, asr_chars_as_dicts
 from funasr_timeline.asr.base import AsrInfo, AsrService, AudioInfo, WordTimeline
+from funasr_timeline.audio import prepare_audio_for_asr
 from funasr_timeline.forced_alignment.base import ForcedAlignmentResult, ForcedAlignmentService
 from funasr_timeline.forced_alignment.config import TelemetryConfig, TimelineProvider
 from funasr_timeline.forced_alignment.sentence_mapper import (
@@ -57,8 +58,12 @@ def run_pipeline(
         audio_path,
         output_dir,
     )
-    _validate_audio(audio_path)
     output_dir.mkdir(parents=True, exist_ok=True)
+    audio_preparation = prepare_audio_for_asr(audio_path, output_dir)
+    audio_conversion_path = output_dir / "audio_conversion.json"
+    _write_json(audio_conversion_path, audio_preparation.to_dict())
+    asr_audio_path = audio_preparation.asr_path
+    _validate_audio(asr_audio_path)
 
     manuscript = read_txt_manuscript(manuscript_path)
     logger.debug("稿件读取完成：chars={} path={}", len(manuscript.text), manuscript.path)
@@ -94,20 +99,20 @@ def run_pipeline(
     if timeline_provider in {"asr-fuzzy", "hybrid"}:
         assert asr_service is not None
         asr_branch = _run_asr_fuzzy_branch(
-            audio_path=audio_path,
+            audio_path=asr_audio_path,
             asr_service=asr_service,
             normalized_manuscript=normalized_manuscript,
             segments=segments,
         )
     else:
-        asr_branch = _empty_asr_branch(audio_path, normalized_manuscript)
+        asr_branch = _empty_asr_branch(asr_audio_path, normalized_manuscript)
     forced_result: ForcedAlignmentResult | None = None
     forced_timings: list[ForcedSentenceTiming] = []
 
     if timeline_provider in {"qwen3-forced", "hybrid"}:
         assert forced_alignment_service is not None
         forced_result = forced_alignment_service.align(
-            audio_path=audio_path,
+            audio_path=asr_audio_path,
             text=segmentation.text,
             language=forced_alignment_language,
         )
@@ -164,6 +169,7 @@ def run_pipeline(
 
     paths = {
         "word_timeline": output_dir / "word_timeline.json",
+        "audio_conversion": audio_conversion_path,
         "manuscript_segments": output_dir / "manuscript_segments.json",
         "normalized_text": output_dir / "normalized_text.json",
         "alignment": output_dir / "alignment.json",
@@ -498,7 +504,7 @@ def run_segmentation(
 
 def _validate_audio(audio_path: Path) -> None:
     if audio_path.suffix.lower() != ".mp3":
-        raise ValueError(f"第一阶段仅支持 .mp3 音频：{audio_path}")
+        raise ValueError(f"ASR 适配后的音频必须为 .mp3：{audio_path}")
     if not audio_path.exists():
         raise FileNotFoundError(f"音频文件不存在：{audio_path}")
 

@@ -21,7 +21,7 @@ uv run funasr-timeline \
 该命令会读取：
 
 - `tests/fixtures/manuscript.txt`：示例稿件。
-- `tests/fixtures/audio.mp3`：示例音频路径。mock 流程只校验路径和 `.mp3` 后缀，不读取真实音频内容。
+- `tests/fixtures/audio.mp3`：示例音频路径。mock 流程不读取真实音频内容；非 MP3 输入会先由 ffmpeg 转换。
 - `tests/fixtures/word_timeline.json`：mock ASR 字符级时间轴。
 
 输出目录：
@@ -30,9 +30,10 @@ uv run funasr-timeline \
 test_temp/
 ```
 
-`asr-fuzzy` 流程会生成 6 个 JSON 文件和 1 个 SRT 字幕文件：
+`asr-fuzzy` 流程会生成 8 个 JSON 文件和 1 个 SRT 字幕文件：
 
 - `word_timeline.json`
+- `audio_conversion.json`
 - `manuscript_segments.json`
 - `normalized_text.json`
 - `alignment.json`
@@ -141,7 +142,7 @@ Schema：
 字段说明：
 
 - `audio.path`：音频路径。
-- `audio.format`：音频格式，当前完整流程要求为 `mp3`。
+- `audio.format`：送入 ASR 的音频格式，当前为 `mp3`。
 - `audio.duration_ms`：音频或 ASR 时间轴持续时间，未知时为 `null`。
 - `asr.provider`：ASR 服务名，例如 `mock` 或 `paraformer-zh`。
 - `asr.model`：模型名或 fixture 标识。
@@ -157,6 +158,27 @@ Schema：
 - `asr.provider` 为 `mock`。
 - `asr.text` 为 `嗯第一句话第二段有english123`。
 - 第一个 token `嗯` 是稿件外 ASR 内容，后续会在对齐报告中标为未映射 ASR token。
+
+## `audio_conversion.json`
+
+用途：记录 ASR 音频输入适配。MP3 输入不会转换；其他输入会通过 ffmpeg 转换到 `output-dir/audio/`。报告在后续 ASR、对齐和渲染前写出，因此后续阶段失败时仍可用于诊断。
+
+Schema：
+
+```json
+{
+  "source_audio_path": "string",
+  "asr_audio_path": "string",
+  "source_format": "string",
+  "asr_format": "mp3",
+  "converted": "boolean",
+  "conversion_reused": "boolean",
+  "conversion_cache_key": "string | null",
+  "ffmpeg_command": "string[] | null"
+}
+```
+
+非 MP3 转换文件名包含基于源路径、大小和修改时间生成的指纹；相同输入可复用已校验的缓存，不同目录下的同名音频不会映射到同一个目标文件。转换先写随机临时文件，经 ffprobe 校验后再原子替换最终缓存文件。
 
 ## `manuscript_segments.json`
 

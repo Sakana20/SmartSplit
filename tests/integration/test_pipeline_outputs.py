@@ -1,6 +1,10 @@
 import json
+import subprocess
 from pathlib import Path
 
+import pytest
+
+import funasr_timeline.audio as audio_module
 from funasr_timeline.asr.base import WordTimeline
 from funasr_timeline.asr.mock_service import MockAsrService
 from funasr_timeline.forced_alignment.mock_service import MockForcedAlignmentService
@@ -22,6 +26,7 @@ def test_pipeline_writes_rich_outputs(tmp_path: Path) -> None:
 
     assert set(paths) == {
         "word_timeline",
+        "audio_conversion",
         "manuscript_segments",
         "normalized_text",
         "alignment",
@@ -32,6 +37,10 @@ def test_pipeline_writes_rich_outputs(tmp_path: Path) -> None:
     }
     for path in paths.values():
         assert path.exists()
+
+    audio_conversion = json.loads(paths["audio_conversion"].read_text(encoding="utf-8"))
+    assert audio_conversion["converted"] is False
+    assert audio_conversion["asr_format"] == "mp3"
 
     sentence_timeline = json.loads(paths["sentence_timeline"].read_text(encoding="utf-8"))
     assert [item["text"] for item in sentence_timeline] == [
@@ -85,6 +94,80 @@ def test_segmentation_can_run_standalone_and_feed_pipeline(tmp_path: Path) -> No
     report = json.loads(paths["alignment_report"].read_text(encoding="utf-8"))
     assert report["segmentation"]["strategy"].startswith("editable:")
     assert paths["sentence_timeline_srt"].exists()
+
+
+def test_pipeline_converts_non_mp3_before_asr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture_dir = Path("tests/fixtures")
+    source_path = tmp_path / "voice.ogg"
+    output_dir = tmp_path / "pipeline"
+    source_path.write_bytes(b"ogg")
+    asr_service = _RecordingAsrService(fixture_dir / "word_timeline.json")
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        if command[0] == "ffmpeg":
+            Path(command[-1]).write_bytes(b"converted mp3")
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(command, 0, stdout="3.0\n", stderr="")
+
+    monkeypatch.setattr(audio_module.subprocess, "run", fake_run)
+
+    paths = run_pipeline(
+        manuscript_path=fixture_dir / "manuscript.txt",
+        audio_path=source_path,
+        output_dir=output_dir,
+        asr_service=asr_service,
+        segmenter=create_segmenter("regex"),
+        timeline_provider="asr-fuzzy",
+    )
+
+    converted_path = asr_service.received_audio_path
+    assert converted_path is not None
+    assert converted_path.parent == output_dir / "audio"
+    assert converted_path.name.startswith("voice-")
+    assert converted_path.suffix == ".mp3"
+    conversion = json.loads(paths["audio_conversion"].read_text(encoding="utf-8"))
+    assert conversion["converted"] is True
+    assert conversion["conversion_reused"] is False
+    assert conversion["source_format"] == "ogg"
+    assert conversion["asr_audio_path"] == str(converted_path)
+
+
+def test_pipeline_writes_conversion_report_before_later_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture_dir = Path("tests/fixtures")
+    source_path = tmp_path / "voice.ogg"
+    output_dir = tmp_path / "pipeline"
+    source_path.write_bytes(b"ogg")
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        if command[0] == "ffmpeg":
+            Path(command[-1]).write_bytes(b"converted mp3")
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(command, 0, stdout="3.0\n", stderr="")
+
+    monkeypatch.setattr(audio_module.subprocess, "run", fake_run)
+
+    with pytest.raises(ValueError, match="需要 asr_service"):
+        run_pipeline(
+            manuscript_path=fixture_dir / "manuscript.txt",
+            audio_path=source_path,
+            output_dir=output_dir,
+            asr_service=None,
+            segmenter=create_segmenter("regex"),
+            timeline_provider="asr-fuzzy",
+        )
+
+    conversion_path = output_dir / "audio_conversion.json"
+    assert conversion_path.exists()
+    conversion = json.loads(conversion_path.read_text(encoding="utf-8"))
+    assert conversion["converted"] is True
 
 
 def test_pipeline_hybrid_uses_forced_timing_and_writes_telemetry(tmp_path: Path) -> None:
@@ -147,3 +230,15 @@ class _ExplodingAsrService:
 
     def transcribe(self, audio_path: Path) -> WordTimeline:
         raise AssertionError(f"ASR should not run for qwen3-forced: {audio_path}")
+
+
+class _RecordingAsrService:
+    provider = "recording"
+
+    def __init__(self, timeline_path: Path) -> None:
+        self.delegate = MockAsrService(timeline_path)
+        self.received_audio_path: Path | None = None
+
+    def transcribe(self, audio_path: Path) -> WordTimeline:
+        self.received_audio_path = audio_path
+        return self.delegate.transcribe(audio_path)

@@ -3,8 +3,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-import soundfile as sf  # type: ignore[import-untyped]
-
+from funasr_timeline.audio import probe_audio_duration_seconds
 from funasr_timeline.merge import SentenceTimelineItem
 from funasr_timeline.render.base import TimelineRenderer
 from funasr_timeline.render.postprocess import (
@@ -118,14 +117,9 @@ def audio_duration_ms(audio_path: Path) -> int:
     if not audio_path.exists():
         raise FileNotFoundError(f"字幕对齐音频不存在：{audio_path}")
     try:
-        info = sf.info(str(audio_path))
+        duration_seconds = probe_audio_duration_seconds(audio_path)
     except RuntimeError as error:
         raise ValueError(f"无法读取字幕对齐音频时长：{audio_path}") from error
-    samplerate = int(info.samplerate)
-    frames = int(info.frames)
-    if samplerate <= 0 or frames < 0:
-        raise ValueError(f"字幕对齐音频时长无效：{audio_path}")
-    duration_seconds = frames / samplerate
     frame_index = math.ceil(duration_seconds * DEFAULT_TIMELINE_FPS - 1e-9)
     return round(frame_index * 1000 / DEFAULT_TIMELINE_FPS)
 
