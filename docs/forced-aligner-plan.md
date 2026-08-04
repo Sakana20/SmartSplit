@@ -16,7 +16,7 @@
 
 ## MPS 可行性结论
 
-已在项目现有 `.venv` 中使用本地模型完成最小实验：
+已在当前固定运行环境 `/Users/sakana/PyEnv/.venv` 中使用本地模型完成最小实验：
 
 - 模型目录：`/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`
 - Python 入口：`qwen_asr.Qwen3ForcedAligner`
@@ -27,7 +27,7 @@
 
 实测结果：
 
-- `qwen_asr` 已可在项目 `.venv` 中 import。
+- `qwen_asr` 已可在 `/Users/sakana/PyEnv/.venv` 中 import。
 - `torch.backends.mps.is_available()` 为 `True`。
 - `bfloat16`、`float16`、`float32` 在 MPS 上均可运行。
 - `bfloat16` 表现最好，加载约 2.6 秒，对齐约 3.5 秒。

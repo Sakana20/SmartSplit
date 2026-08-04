@@ -34,7 +34,7 @@
 
 ## Python 项目规范
 
-- 使用 `uv` 进行依赖管理和命令执行。
+- 使用 `uv` 进行依赖管理和命令执行；当前固定运行环境为 `/Users/sakana/PyEnv/.venv`，不要被外层 `VIRTUAL_ENV` 或项目本地 `.venv` 带偏。
 - 优先采用 `pyproject.toml` 驱动的项目结构，并显式区分运行时依赖和开发依赖。
 - 添加并维护 lint、format、typecheck 和 test 命令。
 - lint、typecheck 和 test 失败默认视为阻塞问题，除非用户明确接受风险。

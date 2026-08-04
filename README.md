@@ -80,7 +80,10 @@ tests/fixtures/stage1_paraformer/
 
 ## 常用命令
 
+项目当前固定运行环境为 `/Users/sakana/PyEnv/.venv`，模型目录仍分别是 `/Users/sakana/PyEnv/paraformer` 和 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`：
+
 ```bash
+export UV_PROJECT_ENVIRONMENT=/Users/sakana/PyEnv/.venv
 uv sync
 uv run pytest -m 'not e2e_real'
 uv run ruff check .

@@ -461,7 +461,7 @@ ASR fuzzy 已在真实 `paraformer-zh` token 级时间轴可用的基础上，�
 已完成本地可行性验证：
 
 - 本地模型目录为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`。
-- 项目 `.venv` 中已可 import `qwen_asr.Qwen3ForcedAligner`。
+- `/Users/sakana/PyEnv/.venv` 中已可 import `qwen_asr.Qwen3ForcedAligner`。
 - macOS MPS 可用，推荐默认配置为 `device_map="mps"` 和 `dtype="bfloat16"`。
 - 在 `tests/fixtures/stage1_paraformer/audio.mp3` 上已跑通一次整篇文本推理。
 - `bfloat16` 加载约 2.6 秒，对齐约 3.5 秒，最大 RSS 约 866 MB。
