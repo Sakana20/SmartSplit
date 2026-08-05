@@ -602,9 +602,33 @@ uv run mypy src
 
 当前项目要求这些命令通过后再认为实现完成。
 
+## 开发完成后的 Codex 本地同步
+
+每次修改项目代码后，除运行质量命令外，还必须把当前版本同步安装到 Codex 使用的固定 Python 环境。`/Users/sakana/PyEnv/.venv` 是多项目共享环境，因此禁止使用会裁剪其他项目依赖的 `uv sync`，必须采用增量 editable 安装。项目内 `scripts/smartsplit` 是唯一正式 CLI；Codex skill 中的脚本只转发参数，不单独维护默认值或业务逻辑。
+
+同步命令：
+
+```bash
+env UV_CACHE_DIR=.uv-cache \
+  uv pip install \
+  --python /Users/sakana/PyEnv/.venv/bin/python \
+  --editable .
+
+scripts/smartsplit --help
+```
+
+同步后需要确认：
+
+- `smartsplit` console entry 可以正常启动。
+- 实际导入路径指向当前仓库的 `src/funasr_timeline`。
+- CLI 参数、默认行为、模型路径、输出或展示文案发生变化时，Codex 本地 `smartsplit` skill 已同步更新。
+- skill 更新后已通过 `quick_validate.py`，并通过 skill 转发脚本完成一次无副作用验证。
+
+以上步骤应在 Git 提交和推送前完成，并在最终交付说明中报告结果。
+
 ## 端到端测试
 
-当前 `uv run pytest --collect-only -q` 共收集 67 个测试，其中真实剪映链路有 1 个测试标记为 `e2e_real`。
+当前 `uv run pytest --collect-only -q` 共收集 91 个测试，其中真实剪映链路有 1 个测试标记为 `e2e_real`。
 
 `tests/e2e/test_jianying_smartsplit_demo.py` 默认运行真实 demo 链路：复用剪映 demo 中的长中文混合文本，调用剪映 TTS 生成音频，使用 LLM 分句，通过 `hybrid` 同时运行 Qwen3 forced aligner 和本地 `paraformer-zh`/FunASR ASR，并可把音频和 SRT 写回剪映草稿。测试成功时会额外写出 `e2e_diagnostics.json`，记录命令、文本长度、TTS 信息、音频转换、剪映草稿、句子数量、状态分布、telemetry 摘要和 report 摘要；子命令失败时会写出 `e2e_failure_diagnostics.json`，保留 TTS、音频转换和 stdout/stderr 尾部输出，方便定位。
 

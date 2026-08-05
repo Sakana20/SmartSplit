@@ -48,6 +48,27 @@
 - 命令行或端到端流程使用小型 fixture 文件覆盖。
 - 常规测试保持确定性，不依赖大型模型下载；FunASR 或其他真实 ASR 输出应优先使用 mock 或 fixture。
 
+## Codex 本地同步门禁
+
+- 每次修改项目代码后，都必须同步安装到 Codex 使用的固定环境 `/Users/sakana/PyEnv/.venv`；未完成同步与验证不得视为交付完成，也不得先提交或推送 Git。
+- `/Users/sakana/PyEnv/.venv` 是多项目共享环境，禁止使用会裁剪无关包的 `uv sync`；必须使用 `uv pip install --python ... --editable .` 增量安装当前项目。
+- 项目内 `scripts/smartsplit` 是唯一正式 CLI 入口；`/Users/sakana/.codex/skills/smartsplit/scripts/smartsplit.sh` 只能作为参数转发器，不得复制默认参数或业务逻辑。
+- 代码修改完成并通过质量检查后，至少执行：
+
+```bash
+env UV_CACHE_DIR=.uv-cache \
+  uv pip install \
+  --python /Users/sakana/PyEnv/.venv/bin/python \
+  --editable .
+
+scripts/smartsplit --help
+```
+
+- 必须确认 `smartsplit` console entry 实际加载当前仓库的 `src/funasr_timeline`，而不是旧安装副本。
+- 如果 CLI 参数、默认行为、模型路径、输出或展示文案发生变化，必须同步更新 `/Users/sakana/.codex/skills/smartsplit/SKILL.md`；如果入口发生变化，还必须同步检查 skill 转发脚本。
+- 修改 skill 后必须运行 `skill-creator/scripts/quick_validate.py` 校验，并实际通过 skill 转发脚本执行一次 `--help` 或等价的无副作用检查。
+- 最终交付说明必须明确报告 Codex 固定环境同步、CLI 加载路径和 skill 校验结果。
+
 ## 预期流程
 
 1. 根据时间轴策略，通过统一 ASR 接口生成 token 时间轴，和/或通过 forced alignment 接口将稿件对齐到音频。
