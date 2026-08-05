@@ -23,6 +23,7 @@ dependencies = [
 
 [project.scripts]
 funasr-timeline = "funasr_timeline.cli:main"
+smartsplit = "funasr_timeline.smartsplit_cli:main"
 
 [dependency-groups]
 dev = [

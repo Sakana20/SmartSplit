@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from importlib import import_module
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -15,6 +16,10 @@ from funasr_timeline.segmentation.protection import (
 from funasr_timeline.segmentation.short_merge import merge_short_segments
 
 DEFAULT_THRESHOLD = 10
+DEFAULT_LOCAL_MODEL_DIR = Path(
+    "/Users/sakana/.hanlp/mtl/close_tok_pos_ner_srl_dep_sdp_con_electra_small_20210111_124159"
+)
+REQUIRED_LOCAL_MODEL_FILES = ("model.pt", "config.json")
 PHRASE_BOUNDARIES = frozenset("，,、。！？!?；;：:")
 
 
@@ -82,9 +87,27 @@ class HanlpSegmenter(SentenceSegmenter):
 @lru_cache(maxsize=1)
 def _load_constituency_parser() -> Any:
     hanlp = import_module("hanlp")
-    model = hanlp.pretrained.mtl.CLOSE_TOK_POS_NER_SRL_DEP_SDP_CON_ELECTRA_SMALL_ZH
+    pretrained_model = hanlp.pretrained.mtl.CLOSE_TOK_POS_NER_SRL_DEP_SDP_CON_ELECTRA_SMALL_ZH
+    model = _resolve_constituency_model(pretrained_model)
     logger.info("加载 HanLP constituency 模型：{}", model)
     return hanlp.load(model)
+
+
+def _resolve_constituency_model(pretrained_model: str) -> str:
+    missing_files = [
+        filename
+        for filename in REQUIRED_LOCAL_MODEL_FILES
+        if not (DEFAULT_LOCAL_MODEL_DIR / filename).is_file()
+    ]
+    if not missing_files:
+        return str(DEFAULT_LOCAL_MODEL_DIR)
+
+    logger.warning(
+        "固定 HanLP 模型目录不可用，回退到 HanLP 原生模型解析：dir={} missing={}",
+        DEFAULT_LOCAL_MODEL_DIR,
+        missing_files,
+    )
+    return pretrained_model
 
 
 def _chunk_token_spans(text: str, tokens: list[str], threshold: int) -> list[tuple[int, int]]:

@@ -10,6 +10,7 @@
 - 本地 `paraformer-zh` FunASR 推理，默认模型目录为 `/Users/sakana/PyEnv/paraformer`。
 - macOS MPS 推理，默认 `--paraformer-device mps`。
 - 可通过 `--segmenter` 选择分句实现，当前内置 `regex`、`hanlp`、`jieba-subtitle` 和可选在线 `llm`。
+- SmartSplit 的 LLM fallback 默认使用 HanLP；HanLP 优先加载固定本地目录 `/Users/sakana/.hanlp/mtl/close_tok_pos_ner_srl_dep_sdp_con_electra_small_20210111_124159`，目录缺失或不完整时回退到 HanLP 原生模型解析。
 - LLM 分句采用纯文本换行输出，不使用 XML/JSON；输出必须完整保留原文标点，校验通过后再由程序去掉分句两端边界标点。
 - LLM 分句当前优先控制在 4 到 8 个汉字的折算长度，硬上限为 10；汉字计 1，英文和数字每两个计 1，标点不计，超长会触发反馈重试。
 - 支持 `[[NO_SPLIT]]...[[/NO_SPLIT]]` 标记保护不分句片段。
@@ -24,6 +25,7 @@
 - SRT 字幕渲染。
 - SRT 渲染默认将首条有效字幕对齐音频起点、末条有效字幕对齐音频结尾，并修复不超过 20 帧（精确计算 667ms，约 670ms）的短间隙和不足 200ms 的短字幕；所有渲染修正写入独立报告，不回写主时间轴。
 - 丰富 JSON 输出和对齐诊断。
+- 仓库内正式 `smartsplit` CLI：固化 LLM + HanLP fallback、hybrid、Paraformer/MPS 和字幕后处理默认值，并保留全部通用参数用于覆盖。
 
 当前 ASR 实现：
 
@@ -91,6 +93,27 @@ uv run ruff format --check .
 uv run mypy src
 ```
 
+## SmartSplit CLI
+
+推荐通过仓库内启动脚本运行。脚本会固定使用 `/Users/sakana/PyEnv/.venv` 和项目内 `.uv-cache`，不再依赖 `~/.codex/skills/smartsplit/scripts/smartsplit.sh`：
+
+```bash
+scripts/smartsplit \
+  --manuscript path/to/manuscript.txt \
+  --audio path/to/original-tts-audio.ogg \
+  --output-dir path/to/output
+```
+
+也可以直接运行 Python console entry：
+
+```bash
+UV_PROJECT_ENVIRONMENT=/Users/sakana/PyEnv/.venv \
+UV_CACHE_DIR=.uv-cache \
+uv run smartsplit --manuscript input.txt --audio voice.ogg --output-dir output
+```
+
+`smartsplit` 默认使用 `llm` 分句、`hanlp` block fallback、`hybrid` 时间轴、`paraformer-zh`/MPS、INFO 日志、667ms 短间隙填充和 200ms 最短字幕。它会在存在时读取 `configs/jianying-e2e.env`；调用方可通过 `SMARTSPLIT_E2E_ENV` 更换环境文件。所有同名 CLI 参数均可覆盖 profile 默认值。
+
 完整真实端到端链路可单独运行：
 
 ```bash
@@ -99,7 +122,7 @@ uv run pytest tests/e2e/test_jianying_smartsplit_demo.py -q
 
 当前测试收集情况和质量命令：
 
-- `pytest --collect-only`：当前收集 67 个测试，其中包含 1 个标记为 `e2e_real` 的真实剪映/LLM/Qwen3/FunASR 端到端测试。
+- `pytest --collect-only`：当前收集 91 个测试，其中包含 1 个标记为 `e2e_real` 的真实剪映/LLM/Qwen3/FunASR 端到端测试。
 - 常规确定性测试可使用 `uv run pytest -m 'not e2e_real'`。
 - 完整真实链路测试需要本地模型、TTS、剪映 Python 接口和 LLM API key。
 - 代码变更时仍应运行 `ruff check`、`ruff format --check` 和 `mypy src`。

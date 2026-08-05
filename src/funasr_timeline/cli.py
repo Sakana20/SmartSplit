@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 
 from funasr_timeline.asr.base import AsrService
 from funasr_timeline.asr.mock_service import MockAsrService
-from funasr_timeline.asr.paraformer_zh_service import (
-    DEFAULT_PARAFORMER_MODEL_DIR,
-    ParaformerZhAsrService,
-)
+from funasr_timeline.asr.paraformer_zh_service import ParaformerZhAsrService
 from funasr_timeline.forced_alignment import (
     create_forced_alignment_service,
     load_aligner_config,
@@ -27,8 +25,29 @@ from funasr_timeline.segmentation.factory import (
 )
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="生成以稿件为准的句子级音频时间轴。")
+@dataclass(frozen=True, slots=True)
+class CliDefaults:
+    segmenter: str = "regex"
+    llm_config: Path = Path("configs/llm-siliconflow.toml")
+    llm_fallback_segmenter: str = "hanlp"
+    timeline_provider: TimelineProvider | None = None
+    aligner_config: Path = Path("configs/aligner-qwen3.toml")
+    asr_provider: str | None = None
+    paraformer_model_dir: Path | None = None
+    paraformer_device: str | None = None
+    log_level: str = "DEBUG"
+    subtitle_gap_threshold_ms: int = DEFAULT_SUBTITLE_GAP_THRESHOLD_MS
+    subtitle_min_duration_ms: int = DEFAULT_SUBTITLE_MIN_DURATION_MS
+
+
+def build_parser(
+    defaults: CliDefaults | None = None,
+    *,
+    prog: str | None = None,
+    description: str = "生成以稿件为准的句子级音频时间轴。",
+) -> argparse.ArgumentParser:
+    defaults = defaults or CliDefaults()
+    parser = argparse.ArgumentParser(prog=prog, description=description)
     parser.add_argument("--manuscript", required=True, type=Path, help=".txt 稿件路径")
     parser.add_argument(
         "--audio",
@@ -53,13 +72,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--subtitle-gap-threshold-ms",
         type=int,
-        default=DEFAULT_SUBTITLE_GAP_THRESHOLD_MS,
-        help="填充空白闪轴的最大相邻字幕间隙；默认 670ms（30fps 下 20 帧），0 表示关闭。",
+        default=defaults.subtitle_gap_threshold_ms,
+        help="填充空白闪轴的最大相邻字幕间隙；默认 667ms（30fps 下 20 帧），0 表示关闭。",
     )
     parser.add_argument(
         "--subtitle-min-duration-ms",
         type=int,
-        default=DEFAULT_SUBTITLE_MIN_DURATION_MS,
+        default=defaults.subtitle_min_duration_ms,
         help="渲染字幕的最短持续时间；默认 200ms（30fps 下 6 帧），0 表示关闭。",
     )
     parser.add_argument("--output-dir", required=True, type=Path, help="输出目录")
@@ -76,8 +95,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--segmenter",
         choices=available_segmenters(),
-        default="regex",
-        help="分句实现。当前默认使用 regex。",
+        default=defaults.segmenter,
+        help=f"分句实现。当前默认使用 {defaults.segmenter}。",
     )
     parser.add_argument(
         "--segment-threshold",
@@ -88,13 +107,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--llm-config",
         type=Path,
-        default=Path("configs/llm-siliconflow.toml"),
+        default=defaults.llm_config,
         help="LLM 分句配置文件路径，仅在 --segmenter llm 时读取。",
     )
     parser.add_argument(
         "--llm-fallback-segmenter",
         choices=available_llm_fallback_segmenters(),
-        default="hanlp",
+        default=defaults.llm_fallback_segmenter,
         help="LLM block 重试失败后的分句器。默认使用 hanlp。",
     )
     parser.add_argument(
@@ -105,18 +124,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timeline-provider",
         choices=["asr-fuzzy", "qwen3-forced", "hybrid"],
-        help="时间轴来源。默认读取 aligner 配置；未配置时使用 hybrid。",
+        default=defaults.timeline_provider,
+        help=(
+            f"时间轴来源。当前默认使用 {defaults.timeline_provider}。"
+            if defaults.timeline_provider is not None
+            else "时间轴来源。默认读取 aligner 配置；未配置时使用 hybrid。"
+        ),
     )
     parser.add_argument(
         "--aligner-config",
         type=Path,
-        default=Path("configs/aligner-qwen3.toml"),
+        default=defaults.aligner_config,
         help="forced aligner 和 hybrid 时间轴配置文件路径。",
     )
     parser.add_argument(
         "--asr-provider",
         choices=["mock", "paraformer-zh"],
-        help="ASR 服务实现；未提供时读取 aligner 配置。",
+        default=defaults.asr_provider,
+        help=(
+            f"ASR 服务实现。当前默认使用 {defaults.asr_provider}。"
+            if defaults.asr_provider is not None
+            else "ASR 服务实现；未提供时读取 aligner 配置。"
+        ),
     )
     parser.add_argument(
         "--mock-word-timeline",
@@ -126,19 +155,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--paraformer-model-dir",
         type=Path,
-        default=DEFAULT_PARAFORMER_MODEL_DIR,
+        default=defaults.paraformer_model_dir,
         help="本地 paraformer-zh 模型目录",
     )
     parser.add_argument(
         "--paraformer-device",
-        default="mps",
+        default=defaults.paraformer_device,
         help="paraformer-zh 推理设备，例如 mps、cpu、cuda:0",
     )
     parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="DEBUG",
-        help="终端日志等级。默认 DEBUG。",
+        default=defaults.log_level,
+        help=f"终端日志等级。默认 {defaults.log_level}。",
     )
     parser.add_argument(
         "--quiet",
@@ -148,8 +177,14 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
+def run_cli(
+    argv: list[str] | None = None,
+    *,
+    defaults: CliDefaults | None = None,
+    prog: str | None = None,
+    description: str = "生成以稿件为准的句子级音频时间轴。",
+) -> int:
+    parser = build_parser(defaults, prog=prog, description=description)
     args = parser.parse_args(argv)
     configure_logging(level=args.log_level, quiet=args.quiet)
     segmenter = create_segmenter(
@@ -184,16 +219,8 @@ def main(argv: list[str] | None = None) -> int:
             asr_service = MockAsrService(args.mock_word_timeline)
         else:
             asr_service = ParaformerZhAsrService(
-                model_dir=(
-                    args.paraformer_model_dir
-                    if args.paraformer_model_dir != DEFAULT_PARAFORMER_MODEL_DIR
-                    else aligner_config.paraformer_zh.model_dir
-                ),
-                device=(
-                    args.paraformer_device
-                    if args.paraformer_device != "mps"
-                    else aligner_config.paraformer_zh.device
-                ),
+                model_dir=args.paraformer_model_dir or aligner_config.paraformer_zh.model_dir,
+                device=args.paraformer_device or aligner_config.paraformer_zh.device,
             )
 
     forced_alignment_service = None
@@ -222,6 +249,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     print_output_paths(paths)
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    return run_cli(argv)
 
 
 if __name__ == "__main__":

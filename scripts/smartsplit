@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${SMARTSPLIT_PROJECT_DIR:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
+PROJECT_ENV="${SMARTSPLIT_PROJECT_ENV:-/Users/sakana/PyEnv/.venv}"
+
+cd "$PROJECT_DIR"
+exec env \
+  UV_PROJECT_ENVIRONMENT="$PROJECT_ENV" \
+  UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+  uv run --project "$PROJECT_DIR" smartsplit "$@"

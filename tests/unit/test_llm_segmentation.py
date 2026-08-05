@@ -10,6 +10,7 @@ import pytest
 
 from funasr_timeline.segmentation import NO_SPLIT_END, NO_SPLIT_START
 from funasr_timeline.segmentation.llm import (
+    MAX_LLM_BLOCK_TIMEOUT_SECONDS,
     LlmSegmentationConfig,
     LlmSentenceSegmenter,
     load_llm_segmentation_config,
@@ -280,6 +281,79 @@ def test_llm_segmenter_retries_request_errors_before_fallback(
     assert [segment.text for segment in result.segments] == ["第一段"]
     assert result.segments[0].segmenter == "llm"
     assert _FlakyAsyncClient.call_count == 2
+
+
+def test_llm_segmenter_splits_total_timeout_across_all_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import funasr_timeline.segmentation.llm as llm_segmentation
+
+    _FakeAsyncClient.requests = []
+    _FakeAsyncClient.response_payload = None
+    _FakeAsyncClient.response_contents = []
+    _FakeAsyncClient.response_content = "第一段。"
+    monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _FakeAsyncClient)
+    config = LlmSegmentationConfig(
+        base_url="https://example.test/v1",
+        model="test-model",
+        api_key_env="TEST_LLM_KEY",
+        api_key="test-key",
+        timeout_seconds=120,
+        max_retries=3,
+    )
+
+    result = LlmSentenceSegmenter(config).segment("第一段。")
+
+    assert [segment.text for segment in result.segments] == ["第一段"]
+    request_timeout = _FakeAsyncClient.requests[0]["timeout"]
+    assert isinstance(request_timeout, httpx.Timeout)
+    assert request_timeout.read == 30
+
+
+def test_llm_config_caps_block_total_timeout_at_120_seconds() -> None:
+    config = LlmSegmentationConfig(
+        base_url="https://example.test/v1",
+        model="test-model",
+        api_key_env="TEST_LLM_KEY",
+        api_key="test-key",
+        timeout_seconds=240,
+    )
+
+    assert config.timeout_seconds == MAX_LLM_BLOCK_TIMEOUT_SECONDS
+
+
+def test_llm_segmenter_falls_back_after_four_30_second_timeout_budgets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import funasr_timeline.segmentation.llm as llm_segmentation
+
+    class _TimeoutAsyncClient(_FakeAsyncClient):
+        async def post(self, url: str, **kwargs: object) -> _FakeResponse:
+            self.requests.append({"url": url, **kwargs})
+            raise httpx.ReadTimeout("request timed out")
+
+    _TimeoutAsyncClient.requests = []
+    monkeypatch.setattr(llm_segmentation.httpx, "AsyncClient", _TimeoutAsyncClient)
+    config = LlmSegmentationConfig(
+        base_url="https://example.test/v1",
+        model="test-model",
+        api_key_env="TEST_LLM_KEY",
+        api_key="test-key",
+        timeout_seconds=120,
+        max_retries=3,
+    )
+
+    result = LlmSentenceSegmenter(
+        config,
+        fallback_segmenter=RegexSentenceSegmenter(),
+    ).segment("第一段。")
+
+    assert result.segments[0].segmenter == "regex"
+    assert len(_TimeoutAsyncClient.requests) == 4
+    assert all(
+        isinstance(request["timeout"], httpx.Timeout) and request["timeout"].read <= 30
+        for request in _TimeoutAsyncClient.requests
+    )
 
 
 def test_llm_segmenter_length_check_counts_two_english_digits_as_one_han_char(

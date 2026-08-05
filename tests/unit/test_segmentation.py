@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from funasr_timeline.normalization import normalize_text
@@ -14,6 +16,7 @@ from funasr_timeline.segmentation import (
     load_editable_segments,
     remove_no_split_markers,
 )
+from funasr_timeline.segmentation import hanlp as hanlp_module
 from funasr_timeline.segmentation.hanlp import PHRASE_BOUNDARIES
 from funasr_timeline.segmentation.length import weighted_content_half_units
 
@@ -39,6 +42,37 @@ def test_hanlp_segmenter_uses_real_constituency_tokens_and_phrase_boundaries() -
 def test_hanlp_segmenter_rejects_non_positive_threshold() -> None:
     with pytest.raises(ValueError, match="threshold 必须大于 0"):
         HanlpSegmenter(threshold=0)
+
+
+def test_hanlp_prefers_complete_fixed_local_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model_dir = tmp_path / "hanlp-model"
+    model_dir.mkdir()
+    (model_dir / "model.pt").write_bytes(b"model")
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(hanlp_module, "DEFAULT_LOCAL_MODEL_DIR", model_dir)
+
+    resolved = hanlp_module._resolve_constituency_model("https://example.com/model.zip")
+
+    assert resolved == str(model_dir)
+
+
+@pytest.mark.parametrize("missing_filename", ["model.pt", "config.json"])
+def test_hanlp_falls_back_when_fixed_local_model_is_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing_filename: str
+) -> None:
+    model_dir = tmp_path / "hanlp-model"
+    model_dir.mkdir()
+    for filename in hanlp_module.REQUIRED_LOCAL_MODEL_FILES:
+        if filename != missing_filename:
+            (model_dir / filename).write_bytes(b"present")
+    monkeypatch.setattr(hanlp_module, "DEFAULT_LOCAL_MODEL_DIR", model_dir)
+    pretrained_model = "https://example.com/model.zip"
+
+    resolved = hanlp_module._resolve_constituency_model(pretrained_model)
+
+    assert resolved == pretrained_model
 
 
 def test_weighted_content_length_counts_two_english_digits_as_one_han_char() -> None:

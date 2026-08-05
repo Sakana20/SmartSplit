@@ -139,6 +139,78 @@
 
 ## 完整流程命令
 
+### SmartSplit 固化 CLI
+
+`smartsplit` 是面向现成 TTS 音频和 UTF-8 稿件的正式业务入口。它复用同一套 Python pipeline，不复制对齐实现，并固化以下默认值：
+
+- `--segmenter llm`
+- `--llm-fallback-segmenter hanlp`
+- `--timeline-provider hybrid`
+- `--asr-provider paraformer-zh`
+- `--paraformer-model-dir /Users/sakana/PyEnv/paraformer`
+- `--paraformer-device mps`
+- `--log-level INFO`
+- `--subtitle-gap-threshold-ms 667`
+- `--subtitle-min-duration-ms 200`
+
+HanLP fallback 优先加载固定本地目录：
+
+```text
+/Users/sakana/.hanlp/mtl/close_tok_pos_ner_srl_dep_sdp_con_electra_small_20210111_124159
+```
+
+只有该目录同时包含 `model.pt` 和 `config.json` 时才会直接使用；目录缺失或不完整时回退到 HanLP 官方预训练模型标识，由 HanLP 按其原生规则查找缓存或下载。已确认完整的固定目录如果在实际加载时出错会直接报错，不会静默换源。
+
+推荐命令：
+
+```bash
+scripts/smartsplit \
+  --manuscript path/to/manuscript.txt \
+  --audio path/to/original-tts-audio.ogg \
+  --output-dir path/to/output
+```
+
+`scripts/smartsplit` 负责定位仓库、固定 `UV_PROJECT_ENVIRONMENT=/Users/sakana/PyEnv/.venv` 并使用项目内 `.uv-cache`。等价的 console entry 为：
+
+```bash
+UV_PROJECT_ENVIRONMENT=/Users/sakana/PyEnv/.venv \
+UV_CACHE_DIR=.uv-cache \
+uv run smartsplit \
+  --manuscript path/to/manuscript.txt \
+  --audio path/to/original-tts-audio.ogg \
+  --output-dir path/to/output
+```
+
+启动时如果 `configs/jianying-e2e.env` 存在，CLI 会按普通 `KEY=VALUE` 文件读取，不执行其中的 shell 代码。通过 `SMARTSPLIT_E2E_ENV` 显式指定的文件不存在或格式无效时，命令返回退出码 2。配置优先级为：
+
+1. 同名命令行参数。
+2. `SMARTSPLIT_*` 环境变量。
+3. 当前进程已有的 `FUNASR_TIMELINE_E2E_*` 环境变量。
+4. E2E 环境文件中的变量。
+5. SmartSplit 内置默认值。
+
+支持的 SmartSplit 环境变量：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `SMARTSPLIT_E2E_ENV` | `configs/jianying-e2e.env` | 要读取的 E2E 环境文件；默认文件不存在时继续使用内置默认值。 |
+| `SMARTSPLIT_LLM_CONFIG` | E2E 环境或 `configs/llm-siliconflow.toml` | LLM 分句配置。 |
+| `SMARTSPLIT_ALIGNER_CONFIG` | E2E 环境或 `configs/aligner-qwen3.toml` | hybrid/forced aligner 配置。 |
+| `SMARTSPLIT_PARAFORMER_MODEL_DIR` | `/Users/sakana/PyEnv/paraformer` | Paraformer 模型目录。 |
+| `SMARTSPLIT_PARAFORMER_DEVICE` | `mps` | Paraformer 推理设备。 |
+| `SMARTSPLIT_PROJECT_DIR` | 启动脚本自动定位 | 仅供 `scripts/smartsplit` 覆盖项目目录。 |
+| `SMARTSPLIT_PROJECT_ENV` | `/Users/sakana/PyEnv/.venv` | 仅供启动脚本覆盖 uv 项目环境。 |
+
+通用 CLI 的所有参数仍可使用，并覆盖上述 profile。例如独立分句或关闭在线 LLM：
+
+```bash
+scripts/smartsplit \
+  --manuscript path/to/manuscript.txt \
+  --output-dir path/to/segments \
+  --segment-only \
+  --segmenter regex
+```
+
 ### Hybrid Forced Aligner 模式
 
 默认完整流程会读取 `configs/aligner-qwen3.toml`。
@@ -301,13 +373,15 @@ uv run funasr-timeline \
 ```toml
 [llm]
 base_url = "https://api.siliconflow.cn/v1"
-model = "Qwen/Qwen3.5-4B"
+model = "Qwen/Qwen3.5-9B"
 api_key_env = "FUNASR_TIMELINE_LLM_API_KEY"
-timeout_seconds = 240
+timeout_seconds = 120
 temperature = 0
 max_tokens = 8192
 enable_thinking = false
 ```
+
+`timeout_seconds` 是单个 LLM block 包含重试在内的总超时预算，代码强制上限为 120 秒。默认 `max_retries = 3`，即首次请求加 3 次重试，共 4 次；每次请求最多分配 30 秒，四次请求共享 120 秒 deadline。配置高于 120 秒会自动按 120 秒执行，重试耗尽或达到总 deadline 后仅将失败 block 交给 HanLP fallback。
 
 如果需要切换模型，只修改配置文件即可，CLI 仍通过 `--llm-config` 读取。
 

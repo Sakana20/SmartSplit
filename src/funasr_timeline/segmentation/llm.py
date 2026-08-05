@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import re
 import tomllib
@@ -34,6 +35,7 @@ from funasr_timeline.segmentation.short_merge import merge_short_segments
 DEFAULT_LLM_CONFIG_PATH = Path("configs/llm-siliconflow.toml")
 _LLM_SEGMENT_TARGET_MAX_CONTENT_CHARS = 8
 _LLM_SEGMENT_HARD_MAX_CONTENT_CHARS = 10
+MAX_LLM_BLOCK_TIMEOUT_SECONDS = 120.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +50,17 @@ class LlmSegmentationConfig:
     enable_thinking: bool = False
     diagnostics_path: Path | None = None
     max_retries: int = 3
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
+            raise ValueError("llm.timeout_seconds 必须是有限正数")
+        if self.timeout_seconds > MAX_LLM_BLOCK_TIMEOUT_SECONDS:
+            logger.warning(
+                "LLM block 总超时 {}s 超过上限，按 {}s 执行",
+                self.timeout_seconds,
+                MAX_LLM_BLOCK_TIMEOUT_SECONDS,
+            )
+            object.__setattr__(self, "timeout_seconds", MAX_LLM_BLOCK_TIMEOUT_SECONDS)
 
     @property
     def resolved_api_key(self) -> str:
@@ -374,13 +387,26 @@ class LlmSentenceSegmenter:
         last_content = ""
         attempts: list[_LlmAttempt] = []
         max_attempts = max(1, self.config.max_retries + 1)
+        attempt_budget_seconds = self.config.timeout_seconds / max_attempts
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.config.timeout_seconds
 
         for attempt in range(1, max_attempts + 1):
+            remaining_seconds = deadline - loop.time()
+            if remaining_seconds <= 0:
+                last_error = _error_to_retry_payload(
+                    exc=TimeoutError(f"LLM block 总耗时达到 {self.config.timeout_seconds:g}s 上限"),
+                    blocks=[block],
+                    previous_output=last_content,
+                )
+                break
+            request_timeout_seconds = min(attempt_budget_seconds, remaining_seconds)
             prompt = _render_prompt(blocks=[block], previous_error=last_error)
             logger.debug(
-                "LLM 分句 block={} 第 {} 次输入 prompt：\n{}",
+                "LLM 分句 block={} 第 {} 次请求预算 {:.3f}s，输入 prompt：\n{}",
                 block.block_id,
                 attempt,
+                request_timeout_seconds,
                 prompt,
             )
             payload = {
@@ -392,7 +418,12 @@ class LlmSentenceSegmenter:
             }
             parsed: dict[str, tuple[str, ...]] = {}
             try:
-                response = await client.post(endpoint, headers=headers, json=payload)
+                response = await client.post(
+                    endpoint,
+                    headers=headers,
+                    json=payload,
+                    timeout=httpx.Timeout(request_timeout_seconds),
+                )
                 response.raise_for_status()
                 response_payload = response.json()
                 finish_reason = _first_choice_finish_reason(response_payload)
@@ -498,6 +529,9 @@ class LlmSentenceSegmenter:
                 "model": self.config.model,
                 "api_key_env": self.config.api_key_env,
                 "timeout_seconds": self.config.timeout_seconds,
+                "attempt_timeout_seconds": (
+                    self.config.timeout_seconds / max(1, self.config.max_retries + 1)
+                ),
                 "temperature": self.config.temperature,
                 "max_tokens": self.config.max_tokens,
                 "enable_thinking": self.config.enable_thinking,

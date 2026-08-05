@@ -45,6 +45,7 @@ uv run mypy src
 
 - `pyproject.toml` 驱动的 `uv` 项目结构。
 - `funasr-timeline` 命令行入口。
+- `smartsplit` 业务命令行入口及 `scripts/smartsplit` 固定环境启动脚本；该入口固化原 skill 的 LLM 分句、HanLP fallback、hybrid 时间轴、Paraformer/MPS、INFO 日志和字幕后处理默认值，同时允许通用 CLI 参数覆盖。
 - `.txt` 稿件读取。
 - `.mp3` 音频路径和格式校验。
 - 统一 ASR 接口。
@@ -52,6 +53,7 @@ uv run mypy src
 - 本地 `paraformer-zh` 服务实现，内部使用 FunASR `AutoModel`，默认模型目录为 `/Users/sakana/PyEnv/paraformer`。
 - macOS MPS 推理支持，默认设备为 `mps`。
 - 可通过 `--segmenter` 选择分句实现，当前内置 `regex`、`hanlp`、`jieba-subtitle`，并支持可选在线 `llm` 分句。
+- HanLP 优先加载固定本地模型目录 `/Users/sakana/.hanlp/mtl/close_tok_pos_ner_srl_dep_sdp_con_electra_small_20210111_124159`；目录缺失或缺少关键文件时回退到 HanLP 原生预训练模型解析。
 - 支持 `[[NO_SPLIT]]...[[/NO_SPLIT]]` 成对标记保护不分句片段。
 - 支持分句单独运行，输出一行一句的可编辑分句文本，并支持从编辑后的分句文本继续执行完整流程。
 - 基础文本归一化。
@@ -66,7 +68,7 @@ uv run mypy src
 - SRT 字幕渲染接口和 `sentence_timeline.srt` 输出。
 - 丰富 JSON 中间产物和诊断报告，包括 `forced_alignment.json` 和 `telemetry.json`。
 - 单元、集成和端到端测试。
-- 当前 `pytest --collect-only -q` 收集 67 个测试，覆盖 mock 流程、CLI 流程、`paraformer-zh` 结果转换逻辑、forced alignment 映射、hybrid telemetry、LLM block 重试与 HanLP fallback、顺序窗口 fuzzy 匹配、时间无重叠修正、SRT 首尾对齐和后处理、保护区分句、HanLP/jieba 短字幕分句、可编辑分句输入和真实 e2e 入口。
+- 当前 `pytest --collect-only -q` 收集 91 个测试，覆盖 mock 流程、通用 CLI 与 SmartSplit profile、环境优先级、HanLP 固定本地模型优先与原生回退、LLM 120 秒总 deadline 与超时 fallback、`paraformer-zh` 结果转换逻辑、forced alignment 映射、hybrid telemetry、顺序窗口 fuzzy 匹配、时间无重叠修正、SRT 首尾对齐和后处理、保护区分句、HanLP/jieba 短字幕分句、可编辑分句输入和真实 e2e 入口。
 - 已手动验证本地 `paraformer-zh` + `mps` 可完成真实音频推理，并可通过 CLI 生成完整 JSON 输出。
 
 当前完整流程输出文件：
@@ -292,7 +294,7 @@ tests/
 
 `llm` 实现通过 TOML 配置读取 OpenAI-compatible Chat Completions 端点、模型、超时和 API key 环境变量。prompt 使用 Jinja2 渲染，包含任务说明、短视频字幕约束、保护段说明、纯文本换行输出约束和多样化 few-shot 示例，并把待分割文本放在最后。进入 LLM 前先由确定性预处理移除保护段，保护标记两侧形成强制 block 边界，紧邻标记的外侧边界标点从模型视图中裁掉。每个预处理 block 分别创建一个只包含该 block 的 LLM 请求，所有 block 以 block 数量作为并发数同时执行，不再要求模型输出跨 block 分隔符。
 
-每个 block 独立维护请求、校验和反馈重试状态。覆盖校验会从原文和模型结果中删除标点、空格、换行及其他分隔符，对剩余字母、中文和数字执行 Unicode 归一化后比较；模型新增空格或改变标点可以接受，漏字、改字和数字变化仍会失败。校验通过后立即结束该 block 的任务，不再参与后续反馈；失败 block 只携带自己的原文、上次输出和错误独立重试。程序根据通过校验的内容字符顺序定位原稿 offset，从原稿切片生成最终文本，因此模型新增的空格和标点不会进入字幕。所有 block 完成后按初始顺序合并，再按规则去掉分句两端的边界标点并把保护段按原顺序和 offset 拼回。
+每个 block 独立维护请求、校验和反馈重试状态。单个 block 包含全部重试的总超时硬上限为 120 秒；默认首次请求加 3 次重试，共 4 次，每次请求最多分配 30 秒并共享同一个 deadline。覆盖校验会从原文和模型结果中删除标点、空格、换行及其他分隔符，对剩余字母、中文和数字执行 Unicode 归一化后比较；模型新增空格或改变标点可以接受，漏字、改字和数字变化仍会失败。校验通过后立即结束该 block 的任务，不再参与后续反馈；失败 block 只携带自己的原文、上次输出和错误独立重试。程序根据通过校验的内容字符顺序定位原稿 offset，从原稿切片生成最终文本，因此模型新增的空格和标点不会进入字幕。所有 block 完成后按初始顺序合并，再按规则去掉分句两端的边界标点并把保护段按原顺序和 offset 拼回。
 
 prompt 会强调常规口播字幕的折算长度优先控制在 4 到 8 个汉字，硬上限为 10；汉字计 1，英文和数字每两个计 1，标点符号不计。请求异常、响应解析错误和内容校验错误都在当前 block 内独立重试。重试耗尽后默认只记录 error 日志，并把失败 block 交给可配置 fallback 分句器，默认使用 `hanlp`；`--llm-raise-on-error` 可改为直接抛错并终止。成功 block 不重跑，最终仍按原 block 顺序合并。`manuscript_segments.json` 为每个分句记录 `segmenter` 和 `source_block_id`，诊断文件记录失败原因与最终 block 策略，供后续 telemetry 使用。
 
