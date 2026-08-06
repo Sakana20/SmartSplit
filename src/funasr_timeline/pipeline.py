@@ -48,6 +48,7 @@ def run_pipeline(
     forced_alignment_language: str = "Chinese",
     telemetry_config: TelemetryConfig | None = None,
     subtitle_alignment_audio: Path | None = None,
+    align_last_subtitle_to_audio_end: bool = True,
     align_first_subtitle_to_audio_start: bool = True,
     subtitle_gap_threshold_ms: int = DEFAULT_SUBTITLE_GAP_THRESHOLD_MS,
     subtitle_min_duration_ms: int = DEFAULT_SUBTITLE_MIN_DURATION_MS,
@@ -140,7 +141,9 @@ def run_pipeline(
             sum(1 for item in sentence_items if item.status == "no_match"),
         )
     srt_renderer = SrtTimelineRenderer(
-        subtitle_alignment_audio=subtitle_alignment_audio,
+        subtitle_alignment_audio=(
+            subtitle_alignment_audio or audio_path if align_last_subtitle_to_audio_end else None
+        ),
         align_first_subtitle_to_audio_start=align_first_subtitle_to_audio_start,
         gap_threshold_ms=subtitle_gap_threshold_ms,
         minimum_duration_ms=subtitle_min_duration_ms,

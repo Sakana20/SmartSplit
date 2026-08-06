@@ -22,6 +22,7 @@ def test_pipeline_writes_rich_outputs(tmp_path: Path) -> None:
         asr_service=MockAsrService(fixture_dir / "word_timeline.json"),
         segmenter=create_segmenter("regex"),
         timeline_provider="asr-fuzzy",
+        align_last_subtitle_to_audio_end=False,
     )
 
     assert set(paths) == {
@@ -61,6 +62,7 @@ def test_pipeline_writes_rich_outputs(tmp_path: Path) -> None:
         "gap_threshold_ms": 667,
         "minimum_duration_ms": 200,
     }
+    assert render_report["end_alignment"]["enabled"] is False
 
     report = json.loads(paths["alignment_report"].read_text(encoding="utf-8"))
     assert report["segmentation"]["strategy"] == "regex"
@@ -89,6 +91,7 @@ def test_segmentation_can_run_standalone_and_feed_pipeline(tmp_path: Path) -> No
         asr_service=MockAsrService(fixture_dir / "word_timeline.json"),
         segments_path=segmentation_paths["editable_segments"],
         timeline_provider="asr-fuzzy",
+        align_last_subtitle_to_audio_end=False,
     )
 
     report = json.loads(paths["alignment_report"].read_text(encoding="utf-8"))
@@ -111,7 +114,24 @@ def test_pipeline_converts_non_mp3_before_asr(
         if command[0] == "ffmpeg":
             Path(command[-1]).write_bytes(b"converted mp3")
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-        return subprocess.CompletedProcess(command, 0, stdout="3.0\n", stderr="")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "streams": [
+                        {
+                            "index": 0,
+                            "codec_type": "audio",
+                            "time_base": "1/1000",
+                            "duration_ts": 3000,
+                        }
+                    ],
+                    "format": {"duration": "3.0"},
+                }
+            ),
+            stderr="",
+        )
 
     monkeypatch.setattr(audio_module.subprocess, "run", fake_run)
 
@@ -122,6 +142,7 @@ def test_pipeline_converts_non_mp3_before_asr(
         asr_service=asr_service,
         segmenter=create_segmenter("regex"),
         timeline_provider="asr-fuzzy",
+        align_last_subtitle_to_audio_end=False,
     )
 
     converted_path = asr_service.received_audio_path
@@ -150,7 +171,24 @@ def test_pipeline_writes_conversion_report_before_later_failure(
         if command[0] == "ffmpeg":
             Path(command[-1]).write_bytes(b"converted mp3")
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-        return subprocess.CompletedProcess(command, 0, stdout="3.0\n", stderr="")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "streams": [
+                        {
+                            "index": 0,
+                            "codec_type": "audio",
+                            "time_base": "1/1000",
+                            "duration_ts": 3000,
+                        }
+                    ],
+                    "format": {"duration": "3.0"},
+                }
+            ),
+            stderr="",
+        )
 
     monkeypatch.setattr(audio_module.subprocess, "run", fake_run)
 
@@ -183,6 +221,7 @@ def test_pipeline_hybrid_uses_forced_timing_and_writes_telemetry(tmp_path: Path)
         ),
         segmenter=create_segmenter("regex"),
         timeline_provider="hybrid",
+        align_last_subtitle_to_audio_end=False,
     )
 
     assert "forced_alignment" in paths
@@ -217,12 +256,56 @@ def test_pipeline_qwen3_forced_does_not_run_asr_branch(tmp_path: Path) -> None:
         ),
         segmenter=create_segmenter("regex"),
         timeline_provider="qwen3-forced",
+        align_last_subtitle_to_audio_end=False,
     )
 
     sentence_timeline = json.loads(paths["sentence_timeline"].read_text(encoding="utf-8"))
     assert sentence_timeline[0]["start_ms"] == 120
     telemetry = json.loads(paths["telemetry"].read_text(encoding="utf-8"))
     assert telemetry["asr_fuzzy"]["provider"] == "none"
+
+
+def test_pipeline_defaults_last_subtitle_to_original_audio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture_dir = Path("tests/fixtures")
+    probe_payload = {
+        "streams": [
+            {
+                "index": 0,
+                "codec_type": "audio",
+                "time_base": "1/1000",
+                "start_time": "0.000",
+                "duration_ts": 2451,
+                "duration": "2.451",
+            }
+        ],
+        "format": {"start_time": "0.000", "duration": "2.451"},
+    }
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        assert command[-1] == str(fixture_dir / "audio.mp3")
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(probe_payload), stderr="")
+
+    monkeypatch.setattr(audio_module.subprocess, "run", fake_run)
+
+    paths = run_pipeline(
+        manuscript_path=fixture_dir / "manuscript.txt",
+        audio_path=fixture_dir / "audio.mp3",
+        output_dir=tmp_path,
+        asr_service=MockAsrService(fixture_dir / "word_timeline.json"),
+        segmenter=create_segmenter("regex"),
+        timeline_provider="asr-fuzzy",
+    )
+
+    srt = paths["sentence_timeline_srt"].read_text(encoding="utf-8")
+    assert "00:00:00,600 --> 00:00:02,451" in srt
+    render_report = json.loads(paths["subtitle_render_report"].read_text(encoding="utf-8"))
+    assert render_report["end_alignment"]["media_path"] == str(fixture_dir / "audio.mp3")
+    assert render_report["end_alignment"]["target_stream_type"] == "audio"
+    assert render_report["end_alignment"]["target_stream_end_ms"] == 2451
 
 
 class _ExplodingAsrService:

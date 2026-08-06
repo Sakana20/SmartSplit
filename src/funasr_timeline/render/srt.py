@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import math
+from dataclasses import replace
 from pathlib import Path
 
-from funasr_timeline.audio import probe_audio_duration_seconds
+from funasr_timeline.audio import MediaStreamTiming, probe_subtitle_alignment_timing
 from funasr_timeline.merge import SentenceTimelineItem
 from funasr_timeline.render.base import TimelineRenderer
 from funasr_timeline.render.postprocess import (
@@ -49,17 +49,31 @@ class SrtTimelineRenderer(TimelineRenderer):
             and item.end_ms >= item.start_ms
         ]
         if not renderable_items:
-            return "", postprocess_subtitle_cues(
+            empty_result = postprocess_subtitle_cues(
                 [],
                 gap_threshold_ms=self.gap_threshold_ms,
                 minimum_duration_ms=self.minimum_duration_ms,
             )
+            return "", replace(
+                empty_result,
+                end_alignment={
+                    "enabled": self.subtitle_alignment_audio is not None,
+                    "applied": False,
+                    "media_path": (
+                        str(self.subtitle_alignment_audio)
+                        if self.subtitle_alignment_audio is not None
+                        else None
+                    ),
+                    "reason": "no_renderable_cues",
+                },
+            )
 
-        aligned_end_ms = (
-            audio_duration_ms(self.subtitle_alignment_audio)
+        alignment_timing = (
+            _probe_alignment_media(self.subtitle_alignment_audio)
             if self.subtitle_alignment_audio is not None
             else None
         )
+        aligned_end_ms = alignment_timing.end_milliseconds if alignment_timing is not None else None
         last_item = renderable_items[-1]
         if (
             aligned_end_ms is not None
@@ -67,8 +81,8 @@ class SrtTimelineRenderer(TimelineRenderer):
             and aligned_end_ms < last_item.start_ms
         ):
             raise ValueError(
-                "字幕对齐音频的结束时间早于最后一条字幕的开始时间："
-                f"audio_end_ms={aligned_end_ms} subtitle_start_ms={last_item.start_ms}"
+                "字幕对齐媒体的结束时间早于最后一条字幕的开始时间："
+                f"media_end_ms={aligned_end_ms} subtitle_start_ms={last_item.start_ms}"
             )
 
         cues: list[SubtitleCue] = []
@@ -98,6 +112,21 @@ class SrtTimelineRenderer(TimelineRenderer):
             gap_threshold_ms=self.gap_threshold_ms,
             minimum_duration_ms=self.minimum_duration_ms,
         )
+        end_alignment: dict[str, object] = {
+            "enabled": alignment_timing is not None,
+            "applied": alignment_timing is not None,
+            "media_path": (
+                str(self.subtitle_alignment_audio)
+                if self.subtitle_alignment_audio is not None
+                else None
+            ),
+            "source_index": last_item.index,
+            "original_last_cue_end_ms": last_item.end_ms,
+            "rendered_last_cue_end_ms": result.cues[-1].end_ms,
+        }
+        if alignment_timing is not None:
+            end_alignment.update(alignment_timing.to_report())
+        result = replace(result, end_alignment=end_alignment)
         blocks: list[str] = []
         for cue_index, cue in enumerate(result.cues, start=1):
             blocks.append(
@@ -114,14 +143,14 @@ class SrtTimelineRenderer(TimelineRenderer):
 
 
 def audio_duration_ms(audio_path: Path) -> int:
-    if not audio_path.exists():
-        raise FileNotFoundError(f"字幕对齐音频不存在：{audio_path}")
+    return _probe_alignment_media(audio_path).end_milliseconds
+
+
+def _probe_alignment_media(media_path: Path) -> MediaStreamTiming:
     try:
-        duration_seconds = probe_audio_duration_seconds(audio_path)
+        return probe_subtitle_alignment_timing(media_path)
     except RuntimeError as error:
-        raise ValueError(f"无法读取字幕对齐音频时长：{audio_path}") from error
-    frame_index = math.ceil(duration_seconds * DEFAULT_TIMELINE_FPS - 1e-9)
-    return round(frame_index * 1000 / DEFAULT_TIMELINE_FPS)
+        raise ValueError(f"无法读取字幕对齐媒体时长：{media_path}") from error
 
 
 def format_srt_timestamp(milliseconds: int) -> str:

@@ -5,7 +5,7 @@
 当前支持：
 
 - `.txt` 分段纯文本稿件。
-- MP3 及其他 ffmpeg 可读取音频格式；非 MP3 输入会自动、安全地转换为 MP3 后送入 ASR，原始音频时长由 ffprobe 读取。
+- MP3 及其他 ffmpeg 可读取媒体格式；非 MP3 输入会自动、安全地转换为 MP3 后送入 ASR。字幕末尾对齐原始媒体的第一个视频流结尾；纯音频输入对齐第一个音频流结尾。
 - mock ASR 时间轴输入。
 - 本地 `paraformer-zh` FunASR 推理，默认模型目录为 `/Users/sakana/PyEnv/paraformer`。
 - macOS MPS 推理，默认 `--paraformer-device mps`。
@@ -23,7 +23,7 @@
 - 本地 Qwen3 forced aligner，默认模型目录为 `/Users/sakana/PyEnv/Qwen3-ForcedAligner-0.6B`。
 - `asr-fuzzy`、`qwen3-forced` 和 `hybrid` 三种时间轴策略。默认配置为 `hybrid`，最终时间以 Qwen3 forced alignment 为主，ASR fuzzy 进入 telemetry。
 - SRT 字幕渲染。
-- SRT 渲染默认将首条有效字幕对齐音频起点、末条有效字幕对齐音频结尾，并修复不超过 20 帧（精确计算 667ms，约 670ms）的短间隙和不足 200ms 的短字幕；所有渲染修正写入独立报告，不回写主时间轴。
+- SRT 渲染默认将首条有效字幕对齐媒体起点、末条有效字幕精确到毫秒对齐原始视频结尾；纯音频输入则对齐音频结尾。渲染还会修复不超过 20 帧（精确计算 667ms，约 670ms）的短间隙和不足 200ms 的短字幕；所有修正写入独立报告，不回写主时间轴。
 - 丰富 JSON 输出和对齐诊断。
 - 仓库内正式 `smartsplit` CLI：固化 LLM + HanLP fallback、hybrid、Paraformer/MPS 和字幕后处理默认值，并保留全部通用参数用于覆盖。
 

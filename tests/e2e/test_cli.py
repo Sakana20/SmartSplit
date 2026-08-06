@@ -1,6 +1,10 @@
 import json
+import subprocess
 from pathlib import Path
 
+import pytest
+
+import funasr_timeline.audio as audio_module
 from funasr_timeline.cli import build_parser, main
 
 
@@ -101,3 +105,55 @@ def test_cli_can_run_segmentation_only(tmp_path: Path) -> None:
     editable_segments = (tmp_path / "editable_segments.txt").read_text(encoding="utf-8")
     assert "第一句话" in editable_segments
     assert (tmp_path / "manuscript_segments.json").exists()
+
+
+def test_cli_defaults_audio_only_input_to_audio_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture_dir = Path("tests/fixtures")
+    probe_payload = {
+        "streams": [
+            {
+                "index": 0,
+                "codec_type": "audio",
+                "time_base": "1/1000",
+                "duration_ts": 2451,
+            }
+        ],
+        "format": {"duration": "2.451"},
+    }
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(probe_payload), stderr="")
+
+    monkeypatch.setattr(audio_module.subprocess, "run", fake_run)
+
+    exit_code = main(
+        [
+            "--manuscript",
+            str(fixture_dir / "manuscript.txt"),
+            "--audio",
+            str(fixture_dir / "audio.mp3"),
+            "--output-dir",
+            str(tmp_path),
+            "--segmenter",
+            "regex",
+            "--asr-provider",
+            "mock",
+            "--mock-word-timeline",
+            str(fixture_dir / "word_timeline.json"),
+            "--timeline-provider",
+            "asr-fuzzy",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "00:00:00,600 --> 00:00:02,451" in (tmp_path / "sentence_timeline.srt").read_text(
+        encoding="utf-8"
+    )
+    report = json.loads((tmp_path / "subtitle_render_report.json").read_text(encoding="utf-8"))
+    assert report["end_alignment"]["enabled"] is True
+    assert report["end_alignment"]["target_stream_type"] == "audio"
+    assert report["end_alignment"]["target_stream_end_ms"] == 2451

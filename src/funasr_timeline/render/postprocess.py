@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 
@@ -17,6 +17,7 @@ class SubtitlePostprocessResult:
     cues: list[SubtitleCue]
     adjustments: list[dict[str, Any]]
     unresolved_short_cues: list[dict[str, int]]
+    end_alignment: dict[str, Any] = field(default_factory=dict)
 
     def to_report(self, *, gap_threshold_ms: int, minimum_duration_ms: int) -> dict[str, Any]:
         return {
@@ -27,6 +28,7 @@ class SubtitlePostprocessResult:
             "adjustment_count": len(self.adjustments),
             "adjustments": self.adjustments,
             "unresolved_short_cues": self.unresolved_short_cues,
+            "end_alignment": self.end_alignment,
         }
 
 

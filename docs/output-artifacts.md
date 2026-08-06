@@ -526,10 +526,36 @@ Schema：
 - 时间格式为 SRT 标准 `HH:MM:SS,mmm`。
 - 字幕正文使用稿件原句 `text`，不使用 ASR 文本。
 - 缺失 `start_ms` 或 `end_ms` 的句子不会渲染为字幕块。
+- 首条有效字幕默认从 `00:00:00,000` 开始；末条有效字幕默认精确到毫秒对齐原始媒体第一个视频流的呈现结尾，纯音频输入对齐第一个音频流。目标不再按固定 30fps 向上取整。
 
 ## `subtitle_render_report.json`
 
-用途：保存 SRT 渲染阶段的闪轴修正诊断。`adjustments` 记录 `short_gap_filled` 和 `short_cue_extended`，`unresolved_short_cues` 记录因没有可用空闲时间而仍短于配置下限的字幕。
+用途：保存 SRT 首尾对齐和闪轴修正诊断。`end_alignment` 记录末尾对齐是否启用和应用、原始媒体路径、目标流类型与 index、探测来源、容器时长、目标流起止/持续时间、修改前后末条时间和毫秒量化策略；`adjustments` 记录 `short_gap_filled` 和 `short_cue_extended`，`unresolved_short_cues` 记录因没有可用空闲时间而仍短于配置下限的字幕。
+
+末尾对齐启用时的示例：
+
+```json
+{
+  "end_alignment": {
+    "applied": true,
+    "enabled": true,
+    "media_format_duration_ms": 18720,
+    "media_path": "/path/to/input.mp4",
+    "original_last_cue_end_ms": 18420,
+    "quantization": "nearest_millisecond",
+    "rendered_last_cue_end_ms": 18720,
+    "source_index": 12,
+    "target_stream_duration_ms": 18720,
+    "target_stream_end_ms": 18720,
+    "target_stream_index": 0,
+    "target_stream_start_ms": 0,
+    "target_stream_type": "video",
+    "timing_source": "stream_duration_ts"
+  }
+}
+```
+
+`target_stream_type` 在含视频媒体中为 `video`，纯音频输入为 `audio`。`timing_source` 通常为 `stream_duration_ts`；流级整数时间不可用时依次使用 `stream_duration`、`packet_end`。单流媒体才允许最终回退到 `format_duration_fallback`；多流媒体无法确定目标流结束时间时会明确失败。
 
 ## `alignment_report.json`
 

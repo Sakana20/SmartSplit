@@ -113,7 +113,7 @@ tests/fixtures/stage1_paraformer/
 
 - 稿件格式：`.txt` 纯文本。
 - 稿件内容：分段文本，保留段落信息。
-- 音频格式：MP3 直接进入 ASR，非 MP3 由 ffmpeg 自动转换为 MP3；原始音频时长由 ffprobe 统一读取。
+- 媒体格式：MP3 直接进入 ASR，非 MP3 由 ffmpeg 自动转换为 MP3；字幕末尾由 ffprobe 从原始媒体第一个视频流的呈现时间读取，纯音频输入使用第一个音频流。
 - 输出格式：以 JSON 为主，字段尽可能丰富，方便后续分析和调整。
 
 ### 暂不处理内容
@@ -440,10 +440,10 @@ SRT 渲染规则：
 - 相邻有效字幕之间大于 0 且不超过 `--subtitle-gap-threshold-ms` 的空隙视为空白闪轴，默认阈值为 20 帧（30fps 下精确计算 667ms，约 670ms）；渲染时把上一条字幕延长到下一条开始时间。设置为 `0` 可关闭。
 - 持续时间短于 `--subtitle-min-duration-ms` 的字幕默认优先向右、再向左利用空闲时间延长，默认最短时间为 200ms（30fps 下 6 帧）。修正不得产生相邻字幕重叠；空间不足时保留可达到的时间并记录为未完全修复。设置为 `0` 可关闭。
 - 默认仅在 SRT 渲染时将第一条有效字幕的开始时间对齐到音频起点 `00:00:00,000`，可通过 `--no-align-first-subtitle-to-audio-start` 关闭。
-- 默认将最后一条有效字幕的结束时间对齐到字幕对齐音频的实际结束时间，并向上取整到 30fps 帧边界。CLI 通过 `--subtitle-alignment-audio` 接收该音频，未指定时使用 `--audio`，并可通过 `--no-align-last-subtitle-to-audio-end` 关闭。
+- 默认将最后一条有效字幕的结束时间对齐到原始媒体第一个视频流的呈现结束时间；纯音频输入使用第一个音频流。目标四舍五入到最近毫秒，不再按固定 30fps 向上取整。CLI 通过历史参数 `--subtitle-alignment-audio` 接收对齐媒体，未指定时使用 `--audio`，并可通过 `--no-align-last-subtitle-to-audio-end` 关闭；Python `run_pipeline()` 使用相同默认行为。
 - 末条结束时间修正仅存在于 SRT renderer 输出，不回写 `SentenceTimelineItem`，也不改变 `sentence_timeline.json`、匹配或诊断结果。
 - 闪轴修正同样只作用于渲染副本，不回写主时间轴；每次修正和无法完全修复的短字幕写入 `subtitle_render_report.json`。
-- 如果 TTS 音频为适配 ASR 而转换格式，字幕对齐使用转换前的原始 TTS 音频，避免编码或容器时长差异影响末条字幕。
+- 如果输入媒体为适配 ASR 而转换格式，字幕对齐仍使用转换前的原始媒体。复合媒体显式使用视频流结束时间，不使用转码 MP3；纯音频输入使用原始音频流，避免转码 MP3 的编码延迟或 padding 影响末条字幕。
 
 后续可继续增加：
 

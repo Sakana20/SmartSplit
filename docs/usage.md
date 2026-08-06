@@ -326,7 +326,7 @@ uv run funasr-timeline \
 | --- | --- | --- | --- |
 | `--manuscript` | 是 | 无 | `.txt` 稿件路径。 |
 | `--audio` | 完整流程必填 | 无 | MP3 或其他 ffmpeg 可读取的音频路径。非 MP3 会自动转换；`--segment-only` 时不需要。 |
-| `--subtitle-alignment-audio` | 否 | `--audio` | 渲染 SRT 时用于将最后一条有效字幕的结束时间对齐到音频结尾。TTS 音频经过格式转换时，应传入转换前的原始音频。 |
+| `--subtitle-alignment-audio` | 否 | `--audio` | 历史参数名。渲染 SRT 时将最后一条有效字幕精确到毫秒对齐第一个视频流结尾；纯音频输入对齐第一个音频流。输入经过格式转换时，应传入转换前的原始媒体。 |
 | `--no-align-last-subtitle-to-audio-end` | 否 | `false` | 关闭末条字幕结束时间到音频结尾的对齐。 |
 | `--no-align-first-subtitle-to-audio-start` | 否 | `false` | 关闭首条有效字幕开始时间到音频起点 `00:00:00,000` 的对齐。 |
 | `--subtitle-gap-threshold-ms` | 否 | `667` | 空白闪轴阈值，对应 30fps 下 20 帧（约 670ms）；相邻字幕的正间隙不超过该值时延长上一条字幕以填满间隙，`0` 表示关闭。 |
@@ -360,9 +360,9 @@ uv run funasr-timeline \
   --output-dir path/to/output
 ```
 
-首条字幕默认从 `00:00:00,000` 开始，末条字幕默认对齐音频结尾并向上取整到 30fps 帧边界。两项对齐都只在最终 SRT 渲染时生效；`sentence_timeline.json`、匹配结果、诊断字段和主流程时间轴均保留原值。
+首条字幕默认从 `00:00:00,000` 开始。含视频流的媒体将末条字幕对齐第一个视频流的呈现结尾；纯音频输入对齐第一个音频流结尾。目标四舍五入到最近毫秒，不再向上取整到固定 30fps 帧边界。两项对齐都只在最终 SRT 渲染时生效；`sentence_timeline.json`、匹配结果、诊断字段和主流程时间轴均保留原值。
 
-音频转换信息会在后续 ASR、对齐和渲染前写入 `audio_conversion.json`；非 MP3 转换结果保存在 `output-dir/audio/`。字幕末尾所需的原始音频时长统一由 `ffprobe` 读取，因此支持范围与 ffmpeg 保持一致。
+音频转换信息会在后续 ASR、对齐和渲染前写入 `audio_conversion.json`；非 MP3 转换结果保存在 `output-dir/audio/`。转码 MP3 只供 ASR 和 forced aligner 使用；字幕末尾由 `ffprobe` 从原始媒体读取，视频优先、纯音频回退。具体目标流类型、stream index、探测来源和最终毫秒值记录在 `subtitle_render_report.json`。
 
 ## LLM 分句配置
 
@@ -566,7 +566,7 @@ hybrid 分析数据。
 
 ### `subtitle_render_report.json`
 
-记录渲染后处理配置、空白闪轴填充、短字幕延长，以及因相邻时间空间不足而未达到最短时长的 cue。`source_index` 对应 `sentence_timeline.json` 中的句子 `index`。
+记录末尾媒体流对齐、渲染后处理配置、空白闪轴填充、短字幕延长，以及因相邻时间空间不足而未达到最短时长的 cue。`end_alignment` 给出媒体路径、目标流类型和 index、探测来源、目标流起止时间、修改前后末条时间及毫秒量化方式；`source_index` 对应 `sentence_timeline.json` 中的句子 `index`。
 
 ### `alignment_report.json`
 

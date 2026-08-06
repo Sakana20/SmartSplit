@@ -52,22 +52,24 @@ def build_parser(
     parser.add_argument(
         "--audio",
         type=Path,
-        help="音频路径；非 MP3 输入会先由 ffmpeg 转换为 MP3",
+        help="媒体或音频路径；非 MP3 输入会先由 ffmpeg 转换为 MP3",
     )
     parser.add_argument(
         "--subtitle-alignment-audio",
         type=Path,
-        help="用于将最后一条字幕结束时间对齐到音频结尾；默认使用 --audio。",
+        help=(
+            "用于将最后一条字幕精确到毫秒对齐视频结尾；纯音频输入对齐音频结尾，默认使用 --audio。"
+        ),
     )
     parser.add_argument(
         "--no-align-last-subtitle-to-audio-end",
         action="store_true",
-        help="关闭最后一条字幕结束时间到音频结尾的对齐。",
+        help="关闭最后一条字幕结束时间到视频或纯音频结尾的对齐。",
     )
     parser.add_argument(
         "--no-align-first-subtitle-to-audio-start",
         action="store_true",
-        help="关闭第一条字幕开始时间到音频起点 00:00:00,000 的对齐。",
+        help="关闭第一条字幕开始时间到媒体起点 00:00:00,000 的对齐。",
     )
     parser.add_argument(
         "--subtitle-gap-threshold-ms",
@@ -238,11 +240,8 @@ def run_cli(
         forced_alignment_service=forced_alignment_service,
         forced_alignment_language=aligner_config.qwen3_forced.language,
         telemetry_config=aligner_config.telemetry,
-        subtitle_alignment_audio=(
-            None
-            if args.no_align_last_subtitle_to_audio_end
-            else args.subtitle_alignment_audio or args.audio
-        ),
+        subtitle_alignment_audio=args.subtitle_alignment_audio,
+        align_last_subtitle_to_audio_end=(not args.no_align_last_subtitle_to_audio_end),
         align_first_subtitle_to_audio_start=(not args.no_align_first_subtitle_to_audio_start),
         subtitle_gap_threshold_ms=args.subtitle_gap_threshold_ms,
         subtitle_min_duration_ms=args.subtitle_min_duration_ms,
